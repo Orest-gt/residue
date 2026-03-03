@@ -1,0 +1,53 @@
+# PROJECT RESIDUE - Git Ignore File
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# C++ build files
+*.obj
+*.lib
+*.exp
+*.pdb
+
+# Performance test outputs
+adaptive_behavior.png
+benchmark_results.txt
+
+# Documentation build
+docs/_build/
+site/
