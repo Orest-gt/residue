@@ -1,15 +1,15 @@
 # PROJECT RESIDUE: The Most Efficient Inference Optimizer for LLM Era
 
-## **V2.1 - Structural-Emphasis • Optimal Weight Configuration • 35.7% Structural Intelligence • Production-Ready**
+## V2.1 - Structural-Emphasis with Optimal Weight Configuration
 
 > **The essential inference optimization tool with advanced structural intelligence for Large Language Models and beyond**  
-> **STATUS:** ✅ V2.1 PRODUCTION READY • OPTIMAL WEIGHTS VALIDATED • STRUCTURAL INTELLIGENCE IMPENETRABLE
+> **STATUS:** V2.1 PRODUCTION READY - OPTIMAL WEIGHTS VALIDATED - STRUCTURAL INTELLIGENCE IMPENETRABLE
 
 ---
 
-## 🚀 **Quick Start**
+## Quick Start
 
-### **Installation**
+### Installation
 ```bash
 # V2.1 (Latest - Structural-Emphasis)
 git clone https://github.com/your-repo/project-residue.git
@@ -21,7 +21,7 @@ python setup.py build_ext --inplace
 pip install residue
 ```
 
-### **Basic Usage**
+### Basic Usage
 ```python
 import residue_v2
 import numpy as np
@@ -35,7 +35,7 @@ data = np.random.randn(1000)
 features = controller.extract_features_v3(data)  # 7-feature extraction
 scaling = controller.compute_multi_dimensional_scaling_v3(features)
 
-print(f"Structural Analysis:")
+print("Structural Analysis:")
 print(f"  ZCR Rate: {features.zcr_rate:.3f}")
 print(f"  L1 Sparsity: {features.l1_sparsity:.3f}")
 print(f"  Temporal Coherence: {features.temporal_coherence:.3f}")
@@ -46,7 +46,7 @@ batch_inputs = np.random.randn(100, 1000)  # 100 tokens
 v3_features = [controller.extract_features_v3(inp) for inp in batch_inputs]
 v3_scalings = [controller.compute_multi_dimensional_scaling_v3(feat) for feat in v3_features]
 avg_savings = (1 - 1/np.mean(v3_scalings)) * 100
-print(f"V3.0 Batch savings: {avg_savings:.1f}%")
+print(f"V2.1 Batch savings: {avg_savings:.1f}%")
 ```
 
 ### **V3.0 Advanced Features**
@@ -69,36 +69,36 @@ controller.set_zcr_window_size(10)  # Adjust frequency analysis window
 
 ---
 
-## 📊 **V2.1 Validated Performance**
+## V2.1 Validated Performance
 
-### **✅ Structural-Emphasis Results (Optimal Weights Applied):**
+### Structural-Emphasis Results (Optimal Weights Applied):
 
 | Feature | V3.0 | V2.1 | Improvement |
 |---------|--------|--------|-------------|
-| **Structural Influence** | 13.6% | ✅ **35.7%** | **162% Increase** |
-| **Conservative Bias** | 4.2x | ✅ **1.3x** | **69% Reduction** |
-| **ZCR Weight** | 2.0 | ✅ **6.0** | **200% Increase** |
-| **L1 Sparsity Weight** | 1.0 | ✅ **5.0** | **400% Increase** |
-| **Noise Discrimination** | Baseline | ✅ **+63.8%** | **Significant Improvement** |
-| **Processing Overhead** | 0.008ms | ✅ **0.098ms** | **Within Limits** |
-| **Ultimate Stress Tests** | N/A | ✅ **7/7 Passed** | **Impenetrable** |
+| **Structural Influence** | 13.6% | **35.7%** | **162% Increase** |
+| **Conservative Bias** | 4.2x | **1.3x** | **69% Reduction** |
+| **ZCR Weight** | 2.0 | **6.0** | **200% Increase** |
+| **L1 Sparsity Weight** | 1.0 | **5.0** | **400% Increase** |
+| **Noise Discrimination** | Baseline | **+63.8%** | **Significant Improvement** |
+| **Processing Overhead** | 0.008ms | **0.098ms** | **Within Limits** |
+| **Ultimate Stress Tests** | N/A | **7/7 Passed** | **Impenetrable** |
 
-### **🎯 V2.1 Real-World Performance:**
+### V2.1 Real-World Performance:
 ```
-Single Sample (1000 elements): 0.098ms ✅
-Batch Processing (100 samples): 9.8ms ✅  
-Large Scale (100k samples): 100% success ✅
-Memory Growth: 12.4MB ✅
-Stress Test: 1000 iterations, 0 crashes ✅
-Silence Detection: 99.9% accuracy ✅
-Chaos Discrimination: 100% accuracy ✅
-Pattern Recognition: 100% accuracy ✅
-EMA Smoothness: 0.002 transition ✅
+Single Sample (1000 elements): 0.098ms
+Batch Processing (100 samples): 9.8ms  
+Large Scale (100k samples): 100% success
+Memory Growth: 12.4MB
+Stress Test: 1000 iterations, 0 crashes
+Silence Detection: 99.9% accuracy
+Chaos Discrimination: 100% accuracy
+Pattern Recognition: 100% accuracy
+EMA Smoothness: 0.002 transition
 ```
 
 ---
 
-## 🎯 **LLM Integration Example**
+## LLM Integration Example
 
 ```python
 import torch
