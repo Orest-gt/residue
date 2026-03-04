@@ -32,6 +32,10 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+test_*.py
+*_test.py
+*_validation.py
+*_analysis.py
 
 # Temporary files
 *.tmp
@@ -47,7 +51,15 @@ htmlcov/
 # Performance test outputs
 adaptive_behavior.png
 benchmark_results.txt
+*.json
 
 # Documentation build
 docs/_build/
 site/
+
+# Development scripts
+quick_*.py
+manual_*.py
+final_*.py
+build_*.py
+setup_*.py
