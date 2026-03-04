@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <pybind11/stl.h>  // Critical for std::vector conversions
 #include <vector>
 #include "core.h"
 
@@ -26,16 +27,7 @@ PYBIND11_MODULE(residue_v2, m) {
         .def("compute_adaptive_scaling", &EntropyControllerV2::compute_adaptive_scaling,
              "Compute adaptive scaling with multi-dimensional features",
              py::arg("input"))
-        .def("extract_features", &EntropyControllerV2::extract_features,
-             "Extract multi-dimensional feature vector",
-             py::arg("input"))
-        .def("compute_multi_dimensional_scaling", 
-             py::overload_cast<const EntropyControllerV2::FeatureVector&>(
-                 &EntropyControllerV2::compute_multi_dimensional_scaling),
-             "Compute scaling from multi-dimensional features",
-             py::arg("features"))
-        
-        // V3.0 Structural heuristics
+        // V3.0 Structural heuristics ONLY
         .def("extract_features_v3", &EntropyControllerV2::extract_features_v3,
              "Extract V3.0 enhanced features with structural heuristics",
              py::arg("input"))
@@ -62,6 +54,11 @@ PYBIND11_MODULE(residue_v2, m) {
         .def("set_zcr_window_size", &EntropyControllerV2::set_zcr_window_size,
              "Set zero crossing rate window size",
              py::arg("size"))
+        .def("set_ema_alpha", &EntropyControllerV2::set_ema_alpha,
+             "Set EMA smoothing factor (0.0 to 1.0)",
+             py::arg("alpha"))
+        .def("get_ema_alpha", &EntropyControllerV2::get_ema_alpha,
+             "Get current EMA smoothing factor")
         
         // Existing methods
         .def("sigmoid_scaling", &EntropyControllerV2::sigmoid_scaling,
@@ -151,8 +148,8 @@ PYBIND11_MODULE(residue_v2, m) {
         std::copy((float*)buf.ptr, (float*)buf.ptr + buf.shape[0], input_vec.begin());
         
         auto controller = create_entropy_controller_v2(256, threshold);
-        auto features = controller->extract_features(input_vec);
-        float scaling = controller->compute_multi_dimensional_scaling(features);
+        auto features = controller->extract_features_v3(input_vec);
+        float scaling = controller->compute_multi_dimensional_scaling_v3(features);
         
         return py::make_tuple(features.entropy, features.complexity, features.sparsity, 
                              features.structure, scaling);
@@ -212,12 +209,12 @@ PYBIND11_MODULE(residue_v2, m) {
                 input_vec[j] = ((float*)buf.ptr)[i * num_features + j];
             }
             
-            auto features = controller->extract_features(input_vec);
+            auto features = controller->extract_features_v3(input_vec);
             entropies[i] = features.entropy;
             complexities[i] = features.complexity;
             sparsities[i] = features.sparsity;
             structures[i] = features.structure;
-            scalings[i] = controller->compute_multi_dimensional_scaling(features);
+            scalings[i] = controller->compute_multi_dimensional_scaling_v3(features);
         }
         
         return py::make_tuple(

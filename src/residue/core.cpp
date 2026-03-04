@@ -221,11 +221,11 @@ float EntropyControllerV2::compute_multi_dimensional_scaling_v3(const FeatureVec
         weights[i] = exp_features[i] * exp_sum_inv;
     }
     
-    // V3.0 Enhanced scaling calculation with structural heuristics
-    const float scaling = 15.0f * weights[0] + 10.0f * weights[1] + 
+    // V2.1 Enhanced scaling calculation with Structural-Emphasis weights
+    const float scaling = 8.0f * weights[0] + 6.0f * weights[1] + 
                          8.0f * weights[2] + 5.0f * weights[3] +
-                         3.0f * weights[4] + 2.0f * weights[5] +
-                         1.0f * weights[6];
+                         4.0f * weights[4] + 6.0f * weights[5] +
+                         5.0f * weights[6];
     
     return std::max(min_scaling_factor, std::min(max_scaling_factor, scaling));
 }
@@ -293,6 +293,24 @@ float EntropyControllerV2::calculate_standard_deviation(const std::vector<float>
     }
     
     return std::sqrt(variance / data.size());
+}
+
+float EntropyControllerV2::calculate_l1_norm_sparsity(const std::vector<float>& data) {
+    if (data.empty()) {
+        return 1.0f; // Empty data is fully sparse
+    }
+    
+    // Calculate L1 norm
+    float l1_norm = 0.0f;
+    for (const float value : data) {
+        l1_norm += std::abs(value);
+    }
+    
+    // Normalize by vector length
+    const float normalized_l1 = l1_norm / data.size();
+    
+    // Return sparsity score (1.0 = very sparse, 0.0 = dense)
+    return std::max(0.0f, 1.0f - normalized_l1);
 }
 
 float EntropyControllerV2::calculate_sparsity(const std::vector<float>& data) {
