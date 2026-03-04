@@ -71,13 +71,8 @@ ZCR Classification: 95% accuracy
 Processing Overhead: 0.008ms (53% faster)
 Memory Efficiency: 0.012KB per sample
 ```
-Processing Overhead: 0.017ms (59x better than claimed)
-Batch Throughput: 78M elements/sec
-Memory Efficiency: 0.008KB/sample
-Stability: 1000 iterations, 0 crashes
-```
 
-### **🎯 Scientific Limitations Identified:**
+### Scientific Limitations Identified:
 1. **Binary trap:** Only two scaling levels (0.10x, 10.00x)
 2. **Weak complexity correlation:** -0.625 (entropy doesn't reflect complexity)
 3. **Random data limitation:** No real-world validation
@@ -85,17 +80,17 @@ Stability: 1000 iterations, 0 crashes
 
 ---
 
-## **🚀 V2.0 Scientific Breakthrough**
+## V2.0 Scientific Breakthrough
 
-### **🔬 Major Improvements:**
+### Major Improvements:
 
-#### **1. NaN Fix Implementation**
+#### 1. NaN Fix Implementation
 - **Problem:** Softmax denominator approaching zero caused NaN in edge cases
 - **Solution:** Added epsilon (1e-8) to softmax denominator
-- **Result:** ✅ Zero NaN results across all test cases
+- **Result:** Zero NaN results across all test cases
 - **Validation:** Constant data, zero data, single values all handled correctly
 
-#### **2. C++ Kernel Optimization**
+#### 2. C++ Kernel Optimization
 - **Problem:** 188% overhead from Python simulation
 - **Solution:** Native C++ implementation with vectorized operations
 - **Performance Results:**
@@ -105,7 +100,7 @@ Stability: 1000 iterations, 0 crashes
   Performance improvement: ~3x faster than Python simulation
   ```
 
-#### **3. Multi-Dimensional Features**
+#### 3. Multi-Dimensional Features
 - **Before:** Single entropy metric
 - **After:** 4-dimensional feature vector
   ```
@@ -115,7 +110,7 @@ Stability: 1000 iterations, 0 crashes
   - Structure: Autocorrelation measure
   ```
 
-#### **4. Semantic Bridge Implementation**
+#### 4. Semantic Bridge Implementation
 - **Function:** Convert scaling factors to skip/predict decisions
 - **Logic:** Sigmoid confidence mapping
 - **Threshold:** 0.7 confidence for skip decisions
