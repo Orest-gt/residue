@@ -1,0 +1,12 @@
+include README.md
+include RESEARCH.md
+include LICENSE
+include pyproject.toml
+include setup.py
+recursive-include src *.cpp *.h *.hpp *.pyd *.so *.dll
+recursive-include src/residue_v2 *.py
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .pytest_cache
+global-exclude build
+global-exclude dist

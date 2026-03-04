@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "pybind11>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "residue"
+version = "2.1.0"
+description = "The Most Efficient Inference Optimizer for LLM Era"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Orestis", email = "orestis@example.com"}
+]
+maintainers = [
+    {name = "Orestis", email = "orestis@example.com"}
+]
+keywords = ["inference", "optimization", "llm", "entropy", "scaling", "structural-heuristics"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.19.0",
+    "pybind11>=2.6.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "mypy"
+]
+
+[project.urls]
+Homepage = "https://github.com/Orest-gt/residue"
+Documentation = "https://github.com/Orest-gt/residue/blob/main/README.md"
+Repository = "https://github.com/Orest-gt/residue.git"
+"Bug Tracker" = "https://github.com/Orest-gt/residue/issues"
+
+[tool.setuptools]
+packages = ["residue_v2"]
+
+[tool.setuptools.package-dir]
+residue_v2 = "src/residue_v2"
+
+[tool.setuptools.package-data]
+residue_v2 = ["*.pyd", "*.so", "*.dll"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
