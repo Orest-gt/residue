@@ -1,19 +1,23 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <pybind11/stl.h>  // Critical for std::vector conversions
 #include <vector>
+#include <string>
 #include "core.h"
 
 namespace py = pybind11;
 
-// Optimized Python bindings for EntropyControllerV2
-PYBIND11_MODULE(residue_v2, m) {
+// PROJECT RESIDUE V3.0 - Complete Structural Heuristics Bindings
+PYBIND11_MODULE(residue_v3, m) {
     m.doc() = "PROJECT RESIDUE V3.0 - Structural Heuristics Implementation";
     
-    // Entropy Controller V2 bindings
+    // Bind EntropyControllerV2 class with V3.0 features
     py::class_<EntropyControllerV2>(m, "EntropyControllerV2")
         .def(py::init<int, float, size_t, float>(),
              py::arg("num_bins") = 256, py::arg("entropy_threshold") = 0.1f,
              py::arg("temporal_buffer_size") = 5, py::arg("l1_threshold") = 0.1f)
+        
+        // Core entropy operations
         .def("calculate_input_entropy", &EntropyControllerV2::calculate_input_entropy,
              "Calculate Shannon entropy of input array",
              py::arg("input"))
@@ -24,8 +28,10 @@ PYBIND11_MODULE(residue_v2, m) {
              "Compute softmax-based analog scaling",
              py::arg("entropy"), py::arg("complexity_score"))
         .def("compute_adaptive_scaling", &EntropyControllerV2::compute_adaptive_scaling,
-             "Compute adaptive scaling with multi-dimensional features",
+             "Compute adaptive scaling factor for input data",
              py::arg("input"))
+        
+        // V2.0 Feature extraction
         .def("extract_features", &EntropyControllerV2::extract_features,
              "Extract multi-dimensional feature vector",
              py::arg("input"))
@@ -49,8 +55,8 @@ PYBIND11_MODULE(residue_v2, m) {
              "Calculate zero crossing rate",
              py::arg("input"))
         .def("compute_temporal_coherence", &EntropyControllerV2::compute_temporal_coherence,
-             "Compute temporal coherence",
-             py::arg("input"))
+             "Compute temporal coherence using EMA",
+             py::arg("current_scaling"))
         
         // V3.0 Configuration
         .def("set_temporal_buffer_size", &EntropyControllerV2::set_temporal_buffer_size,
@@ -62,6 +68,11 @@ PYBIND11_MODULE(residue_v2, m) {
         .def("set_zcr_window_size", &EntropyControllerV2::set_zcr_window_size,
              "Set zero crossing rate window size",
              py::arg("size"))
+        .def("set_ema_alpha", &EntropyControllerV2::set_ema_alpha,
+             "Set EMA smoothing factor (0.0 to 1.0)",
+             py::arg("alpha"))
+        .def("get_ema_alpha", &EntropyControllerV2::get_ema_alpha,
+             "Get current EMA smoothing factor")
         
         // Existing methods
         .def("sigmoid_scaling", &EntropyControllerV2::sigmoid_scaling,
@@ -74,7 +85,8 @@ PYBIND11_MODULE(residue_v2, m) {
              "Compute smoothstep scaling",
              py::arg("edge0"), py::arg("edge1"), py::arg("x"))
         .def("update_performance_history", &EntropyControllerV2::update_performance_history,
-             "Update performance history")
+             "Update performance history",
+             py::arg("entropy"), py::arg("scaling"), py::arg("complexity"))
         .def("get_entropy_history", &EntropyControllerV2::get_entropy_history,
              "Get entropy history")
         .def("get_scaling_history", &EntropyControllerV2::get_scaling_history,
@@ -91,21 +103,26 @@ PYBIND11_MODULE(residue_v2, m) {
              "Set entropy threshold for scaling adaptation",
              py::arg("threshold"))
         .def("set_scaling_range", &EntropyControllerV2::set_scaling_range,
-             "Set min/max scaling factors",
+             "Set min/max scaling range",
              py::arg("min_factor"), py::arg("max_factor"))
         .def("set_num_bins", &EntropyControllerV2::set_num_bins,
              "Set number of histogram bins",
              py::arg("bins"))
+        .def("calculate_standard_deviation", &EntropyControllerV2::calculate_standard_deviation,
+             "Calculate standard deviation",
+             py::arg("data"))
+        .def("calculate_sparsity", &EntropyControllerV2::calculate_sparsity,
+             "Calculate sparsity",
+             py::arg("data"))
+        .def("calculate_structure_score", &EntropyControllerV2::calculate_structure_score,
+             "Calculate structure score",
+             py::arg("data"))
         .def("reset_history", &EntropyControllerV2::reset_history,
              "Reset performance history")
-        .def("get_entropy_history", &EntropyControllerV2::get_entropy_history,
-             "Get entropy history")
-        .def("get_scaling_history", &EntropyControllerV2::get_scaling_history,
-             "Get scaling history")
-        .def("get_complexity_history", &EntropyControllerV2::get_complexity_history,
-             "Get complexity history");
+        .def("clone", &EntropyControllerV2::clone,
+             "Create a clone of this controller");
     
-    // Multi-dimensional optimization
+    // V2.0 Feature vector binding
     py::class_<EntropyControllerV2::FeatureVector>(m, "FeatureVector")
         .def(py::init<>())
         .def_readwrite("entropy", &EntropyControllerV2::FeatureVector::entropy)
@@ -117,7 +134,7 @@ PYBIND11_MODULE(residue_v2, m) {
                 .format(fv.entropy, fv.complexity, fv.sparsity, fv.structure);
         });
     
-    // V3.0 Enhanced feature vector
+    // V3.0 Enhanced feature vector binding
     py::class_<EntropyControllerV2::FeatureVectorV3>(m, "FeatureVectorV3")
         .def(py::init<>())
         .def_readwrite("entropy", &EntropyControllerV2::FeatureVectorV3::entropy)
@@ -132,49 +149,16 @@ PYBIND11_MODULE(residue_v2, m) {
                 .format(fv.entropy, fv.complexity, fv.sparsity, fv.structure, fv.temporal_coherence, fv.zcr_rate, fv.l1_sparsity);
         });
     
-    // Factory function for easy creation
-    m.def("create_entropy_controller_v2", [](int num_bins, float entropy_threshold, 
-                                                   size_t temporal_buffer_size, float l1_threshold) {
-        return create_entropy_controller_v2(num_bins, entropy_threshold, temporal_buffer_size, l1_threshold);
+    // Factory function for V3.0 creation
+    m.def("create_entropy_controller_v3", [](int num_bins, float entropy_threshold, 
+                                                   size_t temporal_buffer_size, float l1_threshold, float ema_alpha) {
+        return create_entropy_controller_v2(num_bins, entropy_threshold, temporal_buffer_size, l1_threshold, ema_alpha);
     }, py::arg("num_bins") = 256, py::arg("entropy_threshold") = 0.1f,
-       py::arg("temporal_buffer_size") = 5, py::arg("l1_threshold") = 0.1f,
-       "Create optimized entropy controller v2.0 with structural heuristics");
+       py::arg("temporal_buffer_size") = 5, py::arg("l1_threshold") = 0.1f, py::arg("ema_alpha") = 0.2f,
+       "Create V3.0 entropy controller with structural heuristics");
     
-    // Convenience functions for production use
-    m.def("compute_analog_scaling", [](py::array_t<float> input, float threshold = 0.1f) {
-        py::buffer_info buf = input.request();
-        if (buf.ndim != 1) {
-            throw std::runtime_error("Input must be 1D array");
-        }
-        
-        std::vector<float> input_vec(buf.shape[0]);
-        std::copy((float*)buf.ptr, (float*)buf.ptr + buf.shape[0], input_vec.begin());
-        
-        auto controller = create_entropy_controller_v2(256, threshold);
-        auto features = controller->extract_features(input_vec);
-        float scaling = controller->compute_multi_dimensional_scaling(features);
-        
-        return py::make_tuple(features.entropy, features.complexity, features.sparsity, 
-                             features.structure, scaling);
-    }, py::arg("input"), py::arg("threshold") = 0.1f,
-       "Compute multi-dimensional analog scaling - main production function");
-    
-    // V3.0 Structural heuristics functions
-    m.def("extract_features_v3", [](py::array_t<float> input) {
-        py::buffer_info buf = input.request();
-        if (buf.ndim != 1) {
-            throw std::runtime_error("Input must be 1D array");
-        }
-        
-        std::vector<float> input_vec(buf.shape[0]);
-        std::copy((float*)buf.ptr, (float*)buf.ptr + buf.shape[0], input_vec.begin());
-        
-        auto controller = create_entropy_controller_v2();
-        return controller->extract_features_v3(input_vec);
-    }, py::arg("input"),
-       "Extract V3.0 enhanced features with structural heuristics");
-    
-    m.def("compute_multi_dimensional_scaling_v3", [](py::array_t<float> input) {
+    // V3.0 Convenience functions
+    m.def("compute_v3_structural_scaling", [](py::array_t<float> input) {
         py::buffer_info buf = input.request();
         if (buf.ndim != 1) {
             throw std::runtime_error("Input must be 1D array");
@@ -187,94 +171,100 @@ PYBIND11_MODULE(residue_v2, m) {
         auto features = controller->extract_features_v3(input_vec);
         return controller->compute_multi_dimensional_scaling_v3(features);
     }, py::arg("input"),
-       "Compute V3.0 multi-dimensional scaling with structural heuristics");
+       "Compute V3.0 structural scaling - main production function");
     
-    m.def("batch_compute_analog_scaling", [](py::array_t<float> inputs, float threshold = 0.1f) {
-        py::buffer_info buf = inputs.request();
-        if (buf.ndim != 2) {
-            throw std::runtime_error("Inputs must be 2D array (batch_size, features)");
+    // Batch processing with proper STL conversions
+    m.def("batch_compute_v3_scaling", [](std::vector<std::vector<float>> inputs) {
+        std::vector<float> results;
+        results.reserve(inputs.size());
+        
+        auto controller = create_entropy_controller_v2();
+        
+        for (const auto& input_vec : inputs) {
+            auto features = controller->extract_features_v3(input_vec);
+            float scaling = controller->compute_multi_dimensional_scaling_v3(features);
+            results.push_back(scaling);
         }
         
-        const size_t batch_size = buf.shape[0];
-        const size_t num_features = buf.shape[1];
-        
-        std::vector<float> entropies(batch_size);
-        std::vector<float> complexities(batch_size);
-        std::vector<float> sparsities(batch_size);
-        std::vector<float> structures(batch_size);
-        std::vector<float> scalings(batch_size);
+        return results;
+    }, py::arg("inputs"),
+       "Batch compute V3.0 scaling for multiple inputs");
+    
+    // Batch decisions with proper type handling
+    m.def("batch_v3_decisions", [](std::vector<std::vector<float>> inputs, float threshold = 0.1f) {
+        std::vector<bool> decisions;
+        decisions.reserve(inputs.size());
         
         auto controller = create_entropy_controller_v2(256, threshold);
         
-        for (size_t i = 0; i < batch_size; i++) {
-            std::vector<float> input_vec(num_features);
-            for (size_t j = 0; j < num_features; j++) {
-                input_vec[j] = ((float*)buf.ptr)[i * num_features + j];
-            }
-            
-            auto features = controller->extract_features(input_vec);
-            entropies[i] = features.entropy;
-            complexities[i] = features.complexity;
-            sparsities[i] = features.sparsity;
-            structures[i] = features.structure;
-            scalings[i] = controller->compute_multi_dimensional_scaling(features);
+        for (const auto& input_vec : inputs) {
+            auto features = controller->extract_features_v3(input_vec);
+            float scaling = controller->compute_multi_dimensional_scaling_v3(features);
+            decisions.push_back(scaling > threshold);
         }
         
-        return py::make_tuple(
-            py::array_t<float>(batch_size, entropies.data()),
-            py::array_t<float>(batch_size, complexities.data()),
-            py::array_t<float>(batch_size, sparsities.data()),
-            py::array_t<float>(batch_size, structures.data()),
-            py::array_t<float>(batch_size, scalings.data())
-        );
+        return decisions;
     }, py::arg("inputs"), py::arg("threshold") = 0.1f,
-       "Batch compute multi-dimensional analog scaling for production workloads");
+       "Batch V3.0 decisions for multiple inputs");
     
-    // Semantic bridge functions
-    m.def("compute_skip_predict_decision", [](float scaling, float confidence_threshold = 0.7f) {
-        // Convert scaling to skip/predict decision
-        float confidence = 1.0f / (1.0f + std::exp(-scaling)); // Sigmoid confidence
-        bool should_skip = confidence > confidence_threshold;
-        
-        return py::make_tuple(should_skip, confidence);
-    }, py::arg("scaling"), py::arg("confidence_threshold") = 0.7f,
-       "Convert scaling factor to skip/predict decision");
-    
-    m.def("batch_skip_predict_decisions", [](py::array_t<float> scalings, float confidence_threshold = 0.7f) {
-        py::buffer_info buf = scalings.request();
+    // V3.0 Analysis functions
+    m.def("analyze_signal_structure", [](py::array_t<float> input) {
+        py::buffer_info buf = input.request();
         if (buf.ndim != 1) {
-            throw std::runtime_error("Scalings must be 1D array");
+            throw std::runtime_error("Input must be 1D array");
         }
         
-        const size_t batch_size = buf.shape[0];
-        std::vector<uint8_t> decisions_uint8(batch_size);
-        std::vector<float> confidences(batch_size);
+        std::vector<float> input_vec(buf.shape[0]);
+        std::copy((float*)buf.ptr, (float*)buf.ptr + buf.shape[0], input_vec.begin());
         
-        float* scaling_ptr = static_cast<float*>(buf.ptr);
-        for (size_t i = 0; i < batch_size; i++) {
-            float confidence = 1.0f / (1.0f + std::exp(-scaling_ptr[i]));
-            decisions_uint8[i] = confidence > confidence_threshold ? 1 : 0;
-            confidences[i] = confidence;
-        }
+        auto controller = create_entropy_controller_v2();
         
-        // Convert uint8 to bool for Python
-        std::vector<bool> decisions(batch_size);
-        for (size_t i = 0; i < batch_size; i++) {
-            decisions[i] = decisions_uint8[i] == 1;
-        }
+        float zcr = controller->calculate_zero_crossing_rate(input_vec);
+        float l1_sparsity = controller->calculate_l1_norm_sparsity(input_vec);
+        float entropy = controller->calculate_input_entropy(input_vec);
         
-        return py::make_tuple(
-            py::cast(decisions),
-            py::array_t<float>(batch_size, confidences.data())
+        return py::dict(
+            "zcr_rate"_a=zcr,
+            "l1_sparsity"_a=l1_sparsity,
+            "entropy"_a=entropy,
+            "signal_type"_a=std::string(zcr > 0.3 ? "high_frequency" : zcr > 0.1 ? "medium_frequency" : "low_frequency")
         );
-    }, py::arg("scalings"), py::arg("confidence_threshold") = 0.7f,
-       "Batch convert scaling factors to skip/predict decisions");
+    }, py::arg("input"),
+       "Analyze signal structure using V3.0 heuristics");
     
-    // Version and metadata
-    m.attr("__version__") = "2.0.0";
-    m.attr("PROJECT") = "RESIDUE";
-    m.attr("COMPONENT") = "Entropy Controller V2.0";
-    m.attr("DESCRIPTION") = "The Analog Scientist - Multi-dimensional optimization with semantic bridge";
-    m.attr("STATUS") = "Production Ready - Optimized";
-    m.attr("OPTIMIZATIONS") = "NaN fix, C++ kernel optimization, semantic bridge";
+    // Temporal coherence analysis
+    m.def("analyze_temporal_stability", [](std::vector<std::vector<float>> input_sequence) {
+        auto controller = create_entropy_controller_v2();
+        std::vector<float> scaling_factors;
+        scaling_factors.reserve(input_sequence.size());
+        
+        for (const auto& input_vec : input_sequence) {
+            auto features = controller->extract_features_v3(input_vec);
+            float scaling = controller->compute_multi_dimensional_scaling_v3(features);
+            scaling_factors.push_back(scaling);
+        }
+        
+        // Calculate stability metrics
+        float mean_scaling = 0.0f;
+        for (float sf : scaling_factors) {
+            mean_scaling += sf;
+        }
+        mean_scaling /= scaling_factors.size();
+        
+        float variance = 0.0f;
+        for (float sf : scaling_factors) {
+            float diff = sf - mean_scaling;
+            variance += diff * diff;
+        }
+        variance /= scaling_factors.size();
+        float std_dev = std::sqrt(variance);
+        
+        return py::dict(
+            "scaling_factors"_a=scaling_factors,
+            "mean_scaling"_a=mean_scaling,
+            "std_deviation"_a=std_dev,
+            "stability_score"_a=std::string(std_dev < 0.1f ? "excellent" : std_dev < 0.5f ? "good" : "poor")
+        );
+    }, py::arg("input_sequence"),
+       "Analyze temporal stability of scaling factors");
 }
