@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "residue-protocol"
-version = "4.2.0"
+version = "4.2.1"
 description = "Bare-Metal AVX2 Inference Shield for LLMs"
 readme = "README.md"
 license = {text = "MIT"}

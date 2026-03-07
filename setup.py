@@ -19,7 +19,7 @@ ext_modules = [
             "src",
         ],
         cxx_std=20,
-        define_macros=[("VERSION_INFO", '"4.2.0"')],
+        define_macros=[("VERSION_INFO", '"4.2.1"')],
         extra_compile_args=["/O2", "/bigobj", "/std:c++20", "/arch:AVX2"] if "win" in sys.platform else ["-O3", "-std=c++20", "-mavx2", "-mfma", "-mpopcnt"],
         extra_link_args=["winmm.lib"] if "win" in sys.platform else [],
     ),
@@ -27,7 +27,7 @@ ext_modules = [
 
 setup(
     name="residue-protocol",
-    version="4.2.0",
+    version="4.2.1",
     author="PROJECT RESIDUE",
     author_email="orestisgatos@gmail.com",
     description="Bare-Metal AVX2 Inference Shield - V4.2 Reality-Synchronized",
