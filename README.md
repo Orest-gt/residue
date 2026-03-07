@@ -1,8 +1,9 @@
 # PROJECT RESIDUE: Bare-Metal AVX2 Inference Shield for LLMs
 
-[![Version](https://img.shields.io/badge/version-4.2.4-blue.svg)](https://github.com/project-residue/residue)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](#)
+[![PyPI version](https://badge.fury.io/py/residue-protocol.svg)](https://pypi.org/project/residue-protocol/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Build Status](https://github.com/Orest-gt/residue/actions/workflows/publish-to-pypi.yml/badge.svg)](https://github.com/Orest-gt/residue/actions)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](#)
 
 > **The ultimate real-time inference optimization tool, dropping LLM pre-filtering overhead to near-zero by completely bypassing the OS kernel and exploiting predicted AVX2 gating.**  
 > **STATUS:** V4.2.4 PRODUCTION READY - BARE METAL ISOLATION - REALITY-SYNCHRONIZED
@@ -44,20 +45,31 @@ Python acts purely as a data pipe, completely decoupled from the C++ worker logi
 
 ## Quick Start
 
-### Installation
-
-Requires a C++17/C++20 compiler with AVX2 support (MSVC on Windows, GCC/Clang on Linux).
-
 ```bash
-git clone https://github.com/project-residue/residue.git
-cd residue
-
-# Build and Install the V4.2.4 Engine
-python setup.py build_ext --inplace
-python setup.py install
-# OR install directly from PyPI
+# Recommended: Install directly from PyPI
 pip install residue-protocol
 ```
+
+### Developer / Local Setup
+
+For those wanting to modify the core C++ kernels or build from source:
+
+1. **Prerequisites**: 
+   - Windows: MSVC (Visual Studio 2022+)
+   - Linux: GCC 11+ or Clang 14+
+   - `cmake` and `ninja` (optional but recommended)
+
+2. **Build for Development**:
+   ```bash
+   git clone https://github.com/Orest-gt/residue.git
+   cd residue
+   pip install -e .[dev]
+   ```
+
+3. **Running Tests**:
+   ```bash
+   pytest tests/
+   ```
 
 ### Advanced Usage (Async Active Observer Mode)
 For separating Python ingestion from the C++ processing thread (useful for pipelining before PyTorch runs):
@@ -115,6 +127,12 @@ Framework: `tests/test_dispatch_benchmark.py`
 Residue absorbs extreme inputs, skipping mathematical processing on irrelevant/sparse segments in O(1) time without stalling the pipeline.
 
 ---
+
+## Roadmap
+
+- [ ] **V5.0**: AVX-512 support for ultra-wide vectorization.
+- [ ] **Distributed Shield**: Mesh-aware isolation for multi-GPU clusters.
+- [ ] **Quantized Gating**: INT8 thresholding for direct tensor core integration.
 
 ## License
 
