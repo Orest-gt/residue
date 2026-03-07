@@ -8,7 +8,7 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(core, m) {
-  m.doc() = "PROJECT RESIDUE V3.1 — Standalone AVX2 Zero Overhead Engine + "
+  m.doc() = "PROJECT RESIDUE V4.2 — Reality-Synchronized AVX2 Engine + "
             "Residue Wall";
 
   py::class_<EntropyControllerV3>(m, "EntropyControllerV3")
@@ -27,6 +27,10 @@ PYBIND11_MODULE(core, m) {
           py::arg("input"))
 
       .def("reset_history", &EntropyControllerV3::reset_history)
+      .def("get_total_samples_processed",
+           &EntropyControllerV3::get_total_samples_processed)
+      .def("get_total_samples_skipped",
+           &EntropyControllerV3::get_total_samples_skipped)
 
       .def(
           "batch_infer_fast",
@@ -109,13 +113,19 @@ PYBIND11_MODULE(core, m) {
                     &residue_wall::TelemetrySnapshot::total_samples_processed)
       .def_readonly("total_samples_skipped",
                     &residue_wall::TelemetrySnapshot::total_samples_skipped)
+      .def_readonly("total_frames_dropped",
+                    &residue_wall::TelemetrySnapshot::total_frames_dropped)
       .def_readonly("current_fps",
                     &residue_wall::TelemetrySnapshot::current_fps)
       .def_readonly("sparsity_pct",
                     &residue_wall::TelemetrySnapshot::sparsity_pct)
+      .def_readonly("buffer_fill_pct",
+                    &residue_wall::TelemetrySnapshot::buffer_fill_pct)
       .def_readonly("is_running", &residue_wall::TelemetrySnapshot::is_running)
       .def_readonly("isolation_active",
-                    &residue_wall::TelemetrySnapshot::isolation_active);
+                    &residue_wall::TelemetrySnapshot::isolation_active)
+      .def_readonly("backpressure_active",
+                    &residue_wall::TelemetrySnapshot::backpressure_active);
 
   py::class_<residue_wall::AsyncObserver>(m, "AsyncObserver")
       .def(py::init<size_t, size_t>(), py::arg("frame_size") = 1024,
@@ -152,5 +162,11 @@ PYBIND11_MODULE(core, m) {
           },
           py::arg("max_count"))
       .def("reset_telemetry", &residue_wall::AsyncObserver::reset_telemetry)
-      .def("poll_telemetry", &residue_wall::AsyncObserver::poll_telemetry);
+      .def("poll_telemetry", &residue_wall::AsyncObserver::poll_telemetry)
+      .def("recommended_push_size",
+           &residue_wall::AsyncObserver::recommended_push_size);
+
+  m.def("print_isolation_report",
+        &residue_wall::IsolationZone::print_isolation_report,
+        "Print the current hardware isolation status to stdout");
 }

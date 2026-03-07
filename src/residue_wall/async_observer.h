@@ -1,15 +1,20 @@
 #pragma once
 
 // =========================================================================
-// RESIDUE WALL — Level 5: Active Observer / Async Ingestion
+// RESIDUE WALL — Level 5: Active Observer / Async Ingestion (V4.2)
+//
+// V4.1: Backpressure Architecture — fill-level monitoring + drop counting
+// V4.2: Exponential Backoff spin-wait — prevents thermal throttling
+//       Dead code removal — eliminated unused V4.0 heuristic loop
+//       Batch size hinting — recommended_push_size() for producers
 //
 // Encapsulates the EntropyControllerV3 in a dedicated C++ background thread.
 // Python (Producer) pushes data into a lock-free Ring Buffer.
 // The Worker Thread (Consumer) runs in the IsolationZone (OS Bypass),
-// pulling data, aligning it, and executing the Branchless Dynamic Dispatch.
+// pulling data, aligning it, and executing the Full-Scan Gate.
 //
-// Telemetry (FPS, Sparsity) is reported back to Python via std::atomic
-// without blocking the hot path.
+// Telemetry (FPS, Sparsity, Buffer Fill, Drops) is reported back to Python
+// via std::atomic without blocking the hot path.
 // =========================================================================
 
 #include "../residue/core.h"
@@ -85,6 +90,15 @@ public:
                 std::memory_order_release);
     return to_read;
   }
+
+  // V4.1: Backpressure support — query current fill level
+  size_t fill_level() const {
+    size_t h = head_.load(std::memory_order_relaxed);
+    size_t t = tail_.load(std::memory_order_relaxed);
+    return (h - t + capacity_) % capacity_;
+  }
+
+  size_t max_capacity() const { return capacity_ - 1; }
 };
 
 // -------------------------------------------------------------------------
@@ -93,11 +107,14 @@ public:
 struct TelemetrySnapshot {
   uint64_t total_samples_ingested;
   uint64_t total_samples_processed;
-  uint64_t total_samples_skipped; // Passed the branchless gate
+  uint64_t total_samples_skipped; // Passed the predicted gate
+  uint64_t total_frames_dropped;  // V4.1: frames lost due to buffer overflow
   double current_fps;             // Output frames per second
   double sparsity_pct;            // Percentage of frames skipped
+  double buffer_fill_pct;         // V4.1: 0.0-100.0 buffer saturation
   bool is_running;
   bool isolation_active;
+  bool backpressure_active; // V4.1: true if fill > 90%
 };
 
 // -------------------------------------------------------------------------
@@ -122,6 +139,7 @@ private:
   alignas(64) std::atomic<uint64_t> samples_ingested_{0};
   alignas(64) std::atomic<uint64_t> samples_processed_{0};
   alignas(64) std::atomic<uint64_t> samples_skipped_{0};
+  alignas(64) std::atomic<uint64_t> frames_dropped_{0}; // V4.1: backpressure
 
   size_t frame_size_;
 
@@ -157,6 +175,10 @@ public:
 
   TelemetrySnapshot poll_telemetry() const;
   void reset_telemetry();
+
+  // V4.2: Optimal push size hint for Python producers.
+  // Pushing in multiples of this value minimizes atomic coherency traffic.
+  size_t recommended_push_size() const { return frame_size_ * 64; }
 };
 
 } // namespace residue_wall

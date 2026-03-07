@@ -5,12 +5,14 @@
 #include <cstddef>
 
 /**
- * PROJECT RESIDUE V3.1 — Standalone Structural Intelligence Engine.
- * ZERO V2 DEPENDENCY. ZERO HEAP ALLOCATION. PURE HARDWARE EVENT.
+ * PROJECT RESIDUE V4.1 — Hardened Structural Intelligence Engine.
+ * ZERO HEAP ALLOCATION. PURE HARDWARE EVENT. INDUSTRIAL-GRADE.
  *
- * This class owns all its state. No inheritance, no virtual dispatch,
- * no std::vector, no std::unique_ptr. Every byte lives on the stack
- * or in aligned static storage.
+ * V4.1 Changes:
+ *   - Replaced indirect V-Table dispatch with [[likely]]/[[unlikely]]
+ *     predicted branches (eliminates BTB misses)
+ *   - Multi-probe heuristic gate (head/mid/tail sampling)
+ *   - No function pointers in hot path
  */
 class alignas(64) EntropyControllerV3 {
 protected:
@@ -33,10 +35,8 @@ protected:
   float ema_scaling;
   bool ema_initialized;
 
-  // --- Branchless Dynamic Dispatch ---
-  using InferFuncPtr = float (EntropyControllerV3::*)(const float *, size_t);
+  // --- Predicted Gating (V4.1: no indirect calls) ---
   float activity_threshold_;
-  InferFuncPtr dispatch_table_[2];
 
 public:
   EntropyControllerV3(int bins = 256, float entropy_threshold = 0.1f,

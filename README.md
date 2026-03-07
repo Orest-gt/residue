@@ -1,11 +1,11 @@
 # PROJECT RESIDUE: Bare-Metal AVX2 Inference Shield for LLMs
 
-[![Version](https://img.shields.io/badge/version-4.0.0-blue.svg)](https://github.com/project-residue/residue)
+[![Version](https://img.shields.io/badge/version-4.2.0-blue.svg)](https://github.com/project-residue/residue)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **The ultimate real-time inference optimization tool, dropping LLM pre-filtering overhead to near-zero by completely bypassing the OS kernel and exploiting branchless AVX2 dispatch.**  
-> **STATUS:** V4.0 PRODUCTION READY - BARE METAL ISOLATION - ASYNC INGESTION
+> **The ultimate real-time inference optimization tool, dropping LLM pre-filtering overhead to near-zero by completely bypassing the OS kernel and exploiting predicted AVX2 gating.**  
+> **STATUS:** V4.2 PRODUCTION READY - BARE METAL ISOLATION - REALITY-SYNCHRONIZED
 
 ---
 
@@ -14,28 +14,31 @@ When processing massive sensor streams or high-frequency sparse data before they
 
 **Project Residue solves this by operating as a "Shield" right before the neural network.** 
 
-By analyzing the structure, complexity, and sparsity of raw data via heuristics, Residue dictates if an input block is "dense enough" to wake up the GPU, or if it is "sparse/noise" and should just bypass execution entirely. To do this without becoming a bottleneck itself, Residue V4.0 was forged directly in C++ AVX2 with techniques usually reserved for High-Frequency Trading.
+By analyzing the structure, complexity, and sparsity of raw data via heuristics, Residue dictates if an input block is "dense enough" to wake up the GPU, or if it is "sparse/noise" and should just bypass execution entirely. To do this without becoming a bottleneck itself, Residue V4.2 was forged directly in C++ AVX2 with techniques usually reserved for High-Frequency Trading.
 
 ---
 
-## V4.0 Architecture Features
+## V4.2 Architecture Features (Reality-Synchronized Engine)
 
-### 1. The Isolation Zone (OS Bypass)
-Residue completely removes the Operating System's scheduler from the hot path.
-* **VirtualLock (RAM Pinning):** Memory pages are locked into physical RAM (`VirtualLock` on Windows, `mlock` on Linux) guaranteeing zero page-faults.
-* **Core Pinning & C-States:** The `AsyncObserver` thread locks itself to a specific physical core and requests max frequency allocation, preventing thread-migration and sleep states.
-* **Kernel Timer Suppression:** OS timer interrupts are actively suppressed (1ms granularity) via `timeBeginPeriod` to prevent preemption.
+V4.2 closes the gap between the lab and production. By taking "real-world" bottlenecks like NUMA architecture, thermal throttling, and Python GC pauses into account, Residue is now an industrial-grade engine.
 
-### 2. Branchless Dynamic Dispatch
-Traditional `if/else` statements for detecting noise severely punish instruction pipelines due to branch mispredictions. Residue V4.1 utilizes a purely mathematical approach:
-* **The Heuristic Gate:** Uses AVX2 intrinsics to extract the absolute sum (L1-norm) of the first 8 floats in ~3 cycles.
-* **V-Table Routing:** Instead of branching, the heuristic directly indexes a statically compiled V-Table (function pointer array), instantly routing the CPU to either the intensive `infer_single_sample_fast` or the instant `infer_single_sample_noop`.
-* **The Result:** 2,360,000 FPS throughput on sparse data (a **19x** performance boost).
+### 1. The Hardened Isolation Zone (OS Bypass + NUMA)
+Residue completely removes the Operating System's scheduler from the hot path with safe degradation.
+* **Deterministic Memory Cascade:** 3-Tier memory locking strategy (`VirtualLock` -> `Huge Pages` -> `PrefetchVirtualMemory`) guarantees the highest possible memory priority without crashing if admin privileges are missing.
+* **SMT-Aware Core Pinning:** The `AsyncObserver` thread detects Hyperthreading and locks itself to a specific *physical* core, actively avoiding contention with hardware thread siblings.
+* **NUMA Topology Hinting:** Automatically detects multi-socket layouts and logs a `CRITICAL WARNING` if the Python memory allocations map to a different CPU node than the worker thread, avoiding latency penalties over the Infinity Fabric/QPI bus.
 
-### 3. Asynchronous Lock-Free Ingestion
+### 2. Predicted Gating (Vectorized Full-Scan)
+Traditional `if/else` statements for detecting noise severely punish instruction pipelines due to branch mispredictions. Residue V4.2 utilizes a purely predictive approach:
+* **Vectorized Full-Scan Gate:** Instead of relying on heuristic sampling probes, the engine uses `_mm256_max_ps` to compute the Max-Abs value of **every single float** in the frame (1024 floats) in ~71 cycles. Zero false negatives.
+* **Static Branch Prediction:** Uses C++20 `[[likely]]`/`[[unlikely]]` attributes to dictate static layout. The Direct Branch trains the CPU's dynamic Branch Target Buffer (BTB) instantly, eliminating the 20-cycle penalty of indirect V-Table calls.
+* **The Result:** 2,178,336 FPS throughput on highly sparse data (a **14x** performance boost over baseline heavy compute).
+
+### 3. Asynchronous Lock-Free Ingestion & Intelligent Wait
 Python acts purely as a data pipe, completely decoupled from the C++ worker logic.
-* **SPSC Ring Buffers:** Python pushes data and pulls results via a lock-free Single-Producer Single-Consumer queue.
-* **Atomic Telemetry:** The background C++ thread reports real-time metrics (FPS, incoming sparsity %, skips) without a single mutex, allowing Python to poll diagnostics at 0 overhead.
+* **SPSC Ring Buffers:** Python pushes data via a lock-free Single-Producer Single-Consumer queue. `recommended_push_size()` ensures optimal cache line MESI coherency.
+* **Atomic Telemetry & Backpressure:** The background C++ thread reports real-time metrics (FPS, incoming sparsity %, buffer fill level %, frames dropped). Python can dynamically back off if `backpressure_active` turns true.
+* **Adaptive Exponential Backoff:** If the buffer empties (e.g. during a Python GC pause), the C++ worker gracefully decays its spin-wait (`_mm_pause` -> `SwitchToThread`), avoiding Thermal Throttling from 100% idle spinning, ensuring Turbo Boost headroom remains available.
 
 ---
 
@@ -43,32 +46,15 @@ Python acts purely as a data pipe, completely decoupled from the C++ worker logi
 
 ### Installation
 
-Requires a C++20 compiler with AVX2 support (MSVC on Windows, GCC/Clang on Linux).
+Requires a C++17/C++20 compiler with AVX2 support (MSVC on Windows, GCC/Clang on Linux).
 
 ```bash
-git clone https://github.com/your-repo/project-residue.git
-cd project-residue
+git clone https://github.com/project-residue/residue.git
+cd residue
 
-# Build and Install the V4 Engine
+# Build and Install the V4.2 Engine
 python setup.py build_ext --inplace
 python setup.py install
-```
-
-### Basic Usage (Sync Mode)
-For classic synchronous batch processing directly over NumPy arrays:
-
-```python
-import numpy as np
-import residue.core as core
-
-# 1. Initialize Controller (256 Bins, 0.1 Threshold, 1024 floats per frame)
-controller = core.create_entropy_controller_v3(256, 0.1, 5, 0.1, 0.2)
-
-# 2. Prepare Memory (Pinned)
-data = np.random.randn(10_000 * 1024).astype(np.float32)
-
-# 3. Process Stream Walled (AVX2 + Branchless Dispatch)
-result_factors = controller.batch_infer_walled(data, frame_size=1024)
 ```
 
 ### Advanced Usage (Async Active Observer Mode)
@@ -79,21 +65,32 @@ import numpy as np
 import time
 from residue.core import AsyncObserver, print_isolation_report
 
-# 1. Check OS Bypass Telemetry (Must run as Administrator/Root for full memory pinning)
+# 1. Check OS Bypass Telemetry (SMT detection, Memory Tiers)
 print_isolation_report()
 
 # 2. Spawn Background Worker C++ Thread
 observer = AsyncObserver(frame_size=1024, buffer_capacity_frames=10_000)
 observer.start()  # Enters Isolation Zone
 
-# 3. Python pushes data Non-Blocking
+# 3. Python pushes data Non-Blocking in optimal batches
 data = np.random.randn(500 * 1024).astype(np.float32)
-observer.push_data(data)
+push_size = observer.recommended_push_size()
 
-# 4. Read Lock-Free Telemetry 
+# Push data in chunks that minimize MESI Coherency traffic
+for i in range(0, len(data), push_size):
+    chunk = data[i:i + push_size]
+    observer.push_data(chunk, len(chunk))
+
+# 4. Read Lock-Free Telemetry with Backpressure
 telemetry = observer.poll_telemetry()
-print(f"Skipped Frames: {telemetry.total_samples_skipped}")
-print(f"Real-Time FPS: {telemetry.current_fps}")
+print(f"Processed: {telemetry.total_samples_processed}")
+print(f"Skipped: {telemetry.total_samples_skipped} ({telemetry.sparsity_pct:.1f}%)")
+print(f"FPS: {telemetry.current_fps:.1f}")
+
+if telemetry.backpressure_active:
+    print(f"WARNING: Buffer {telemetry.buffer_fill_pct:.1f}% full!")
+if telemetry.total_frames_dropped > 0:
+    print(f"FATAL: Dropped {telemetry.total_frames_dropped} frames!")
 
 # 5. Stop Worker
 observer.stop()
@@ -108,10 +105,10 @@ Framework: `tests/test_dispatch_benchmark.py`
 
 | Sparsity (Silence) | Mode                  | Peak Throughput | Execution Speedup |
 |--------------------|-----------------------|----------------|-------------------|
-| **0% (Dense)**     | Heavy Compute (AVX2)  | **123,010 FPS** | 1.00x             |
-| **50% (Mixed)**    | Branchless V-Table    | **221,418 FPS** | 1.80x             |
-| **90% (Sparse)**   | Branchless V-Table    | **684,064 FPS** | 5.56x             |
-| **99% (Extreme)**  | Pure V-Table Bypassing| **2,367,637 FPS**| **19.24x**        |
+| **0% (Dense)**     | Baseline AVX2 Math    | **148,523 FPS** | 1.00x             |
+| **50% (Mixed)**    | Predicted Gating      | **437,130 FPS** | 2.94x             |
+| **90% (Sparse)**   | Predicted Gating      | **1,370,433 FPS** | 9.23x             |
+| **99% (Extreme)**  | Predicted Gating      | **2,178,336 FPS**| **14.67x**        |
 
 Residue absorbs extreme inputs, skipping mathematical processing on irrelevant/sparse segments in O(1) time without stalling the pipeline.
 

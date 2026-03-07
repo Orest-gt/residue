@@ -33,7 +33,13 @@ void AsyncObserver::stop() {
 size_t AsyncObserver::push_data(const float *data, size_t size) {
   if (!is_running_.load(std::memory_order_relaxed))
     return 0;
-  return intake_queue_.push(data, size);
+  size_t written = intake_queue_.push(data, size);
+  // V4.1: Track dropped data for backpressure reporting
+  size_t dropped = size - written;
+  if (dropped > 0) {
+    frames_dropped_.fetch_add(dropped / frame_size_, std::memory_order_relaxed);
+  }
+  return written;
 }
 
 size_t AsyncObserver::pull_output(float *dest, size_t max_count) {
@@ -44,6 +50,7 @@ void AsyncObserver::reset_telemetry() {
   samples_ingested_.store(0, std::memory_order_relaxed);
   samples_processed_.store(0, std::memory_order_relaxed);
   samples_skipped_.store(0, std::memory_order_relaxed);
+  frames_dropped_.store(0, std::memory_order_relaxed); // V4.1
   last_fps_update_ns_.store(0, std::memory_order_relaxed);
   current_fps_x100_.store(0, std::memory_order_relaxed);
 }
@@ -55,6 +62,7 @@ TelemetrySnapshot AsyncObserver::poll_telemetry() const {
   snap.total_samples_processed =
       samples_processed_.load(std::memory_order_relaxed);
   snap.total_samples_skipped = samples_skipped_.load(std::memory_order_relaxed);
+  snap.total_frames_dropped = frames_dropped_.load(std::memory_order_relaxed);
 
   uint64_t total = snap.total_samples_processed;
   if (total > 0) {
@@ -67,16 +75,20 @@ TelemetrySnapshot AsyncObserver::poll_telemetry() const {
   uint64_t fps_scaled = current_fps_x100_.load(std::memory_order_relaxed);
   snap.current_fps = (double)fps_scaled / 100.0;
 
+  // V4.1: Buffer fill level and backpressure
+  size_t fill = intake_queue_.fill_level();
+  size_t cap = intake_queue_.max_capacity();
+  snap.buffer_fill_pct = (cap > 0) ? ((double)fill / (double)cap * 100.0) : 0.0;
+  snap.backpressure_active = (snap.buffer_fill_pct > 90.0);
+
   snap.is_running = is_running_.load(std::memory_order_relaxed);
-  snap.isolation_active = true; // Handled by IsolationZone
+  snap.isolation_active = true;
 
   return snap;
 }
 
 void AsyncObserver::worker_loop() {
-  // L5.2: Enter the Isolation Zone
-  // This thread is now elevated to REAL_TIME, locked to the last core,
-  // and Windows timers are reduced to 1ms.
+  // V4.2: Enter the Isolation Zone (HIGH priority, SMT-aware core pin)
   IsolationZone guard;
 
   const size_t TILE_FRAMES = 64;
@@ -97,6 +109,9 @@ void AsyncObserver::worker_loop() {
   uint64_t frames_this_second = 0;
   auto last_fps_time = std::chrono::steady_clock::now();
 
+  // V4.2: Exponential Backoff spin-wait state
+  uint32_t idle_spins = 0;
+
   // Engine state
   engine_->reset_history();
 
@@ -107,42 +122,36 @@ void AsyncObserver::worker_loop() {
     size_t floats_read = intake_queue_.pop(aligned_tile, tile_size_floats);
 
     if (floats_read == 0) {
-      // Buffer empty. Yield CPU politely to hold C0 state without 100% burn.
-      micro_pause();
+      // V4.2: Adaptive 3-Tier Exponential Backoff
+      // Prevents thermal throttling and GC-pause CPU waste.
+      idle_spins++;
+
+      if (idle_spins < 64) {
+        // Tier 1: Hot spin (~1us) — sub-microsecond wakeup latency
+        _mm_pause();
+      } else if (idle_spins < 4096) {
+        // Tier 2: Warm pause (~50us) — yields HT sibling resources
+        for (int k = 0; k < 8; ++k)
+          _mm_pause();
+      } else {
+        // Tier 3: Cold yield — give up timeslice, saves TDP
+#ifdef _WIN32
+        SwitchToThread();
+#else
+        sched_yield();
+#endif
+      }
       continue;
     }
+
+    // Data arrived — reset backoff state
+    idle_spins = 0;
 
     size_t frames_read = floats_read / frame_size_;
     samples_ingested_.fetch_add(floats_read, std::memory_order_relaxed);
 
-    // 2. Walled Execution Wrapper (similar to process_stream_walled inner loop)
-    // We run the heuristic gate here manually so we can count skips for
-    // telemetry
-    size_t local_processed = 0;
-    size_t local_skipped = 0;
-
-    for (size_t i = 0; i < frames_read; ++i) {
-      const float *frame_ptr = aligned_tile + (i * frame_size_);
-
-      // Branchless heuristic
-      __m256 v_frame = _mm256_load_ps(frame_ptr);
-      __m256 v_absmask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
-      __m256 v_abs = _mm256_and_ps(v_frame, v_absmask);
-      float l1_head =
-          _mm256_cvtss_f32(_mm256_hadd_ps(_mm256_hadd_ps(v_abs, v_abs), v_abs));
-
-      // Quick approximate logic to mimic hsum_ps_avx2 (to avoid linking it here
-      // if inline fails) Actually we should just call
-      // engine_->infer_single_sample_... directly based on threshold Or we can
-      // use the same dispatch logic. Wait, let's just use the direct Engine
-      // Call: engine_->process_stream_walled(aligned_tile...) But we lose the
-      // exact skip count. Let's just do it directly.
-    }
-
-    // Let's actually just use the existing battle-tested process_stream_walled!
-    // We already passed the aligned_tile, no need to duplicate the heuristic
-    // here.
-    // Process and update telemetry
+    // V4.2: Dead heuristic loop removed. Delegate directly to the
+    // battle-tested process_stream_walled which contains the full-scan gate.
     engine_->process_stream_walled(aligned_tile, floats_read, frame_size_,
                                    output_factors);
     samples_processed_.store(engine_->get_total_samples_processed(),

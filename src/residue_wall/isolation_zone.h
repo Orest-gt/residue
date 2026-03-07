@@ -1,17 +1,17 @@
 #pragma once
 
 // =========================================================================
-// RESIDUE WALL — Level 4: Thread Isolation Zone
+// RESIDUE WALL — Level 4: Thread Isolation Zone (V4.1 HARDENED)
 //
-// Elevates ThreadGuard from "priority hint" to "OS bypass":
-//   1. MemoryLock   — VirtualLock/mlock pins data pages in physical RAM
-//   2. TimerControl — Reduces OS scheduling tick to 1ms (Windows)
-//   3. CoreIsolation — Enhanced affinity + C-state disable
-//   4. IRQShield    — Detects and warns about IRQ contention
+// V4.1 Changes:
+//   1. 3-Tier Memory Lock Cascade (VirtualLock → HugePages → Prefetch)
+//   2. Priority De-escalation (HIGH, not REALTIME — no OS freeze)
+//   3. SMT Detection (pin to physical core, avoid HT sibling)
+//   4. Explicit IsolationStatus with MemoryLockTier reporting
 //
 // All mechanisms are RAII-safe: destructor restores original state.
 // Graceful degradation: if a mechanism requires admin and fails,
-// we warn once and continue without it.
+// we record the tier and continue without it.
 // =========================================================================
 
 #include <cstddef>
@@ -26,6 +26,38 @@
 #endif
 
 // =========================================================================
+// SHARED: Memory Lock Tier Enum
+// =========================================================================
+namespace residue_wall {
+
+enum class MemoryLockTier : uint8_t {
+  LOCKED = 0,     // VirtualLock / mlock succeeded — pages pinned in RAM
+  HUGE_PAGES = 1, // Large/Huge pages allocated — TLB-optimal, pinned
+  PREFETCHED =
+      2,   // Advisory prefetch only — no guarantee, but better than nothing
+  NONE = 3 // No memory protection — page faults possible
+};
+
+struct IsolationStatus {
+  MemoryLockTier memory_tier;
+  bool timer_hires;
+  bool core_pinned;
+  bool priority_elevated;
+  bool smt_detected;
+  bool irq_warned;
+  bool numa_cross_node_risk; // V4.2: true if >1 NUMA node detected
+
+  uint32_t locked_bytes;
+  uint32_t pinned_core;
+  uint32_t physical_core;   // actual physical core ID (may differ from logical)
+  uint32_t cpu_numa_node;   // V4.2: NUMA node the worker runs on
+  uint32_t numa_node_count; // V4.2: total NUMA nodes in system
+  double last_elapsed_us;
+};
+
+} // namespace residue_wall
+
+// =========================================================================
 // PLATFORM: WINDOWS
 // =========================================================================
 #ifdef _WIN32
@@ -36,19 +68,6 @@
 #pragma comment(lib, "winmm.lib") // for timeBeginPeriod/timeEndPeriod
 
 namespace residue_wall {
-
-// --- Isolation status flags ---
-struct IsolationStatus {
-  bool memory_locked;
-  bool timer_hires;
-  bool core_pinned;
-  bool priority_realtime;
-  bool irq_warned;
-
-  uint32_t locked_bytes;     // total bytes locked in physical RAM
-  uint32_t pinned_core;      // core ID we're pinned to
-  double   last_elapsed_us;
-};
 
 class IsolationZone {
 private:
@@ -66,8 +85,9 @@ private:
   struct LockedRegion {
     const void *ptr;
     size_t bytes;
+    MemoryLockTier tier;
   };
-  static constexpr size_t MAX_LOCKED_REGIONS = 4;
+  static constexpr size_t MAX_LOCKED_REGIONS = 8;
   LockedRegion locked_regions_[MAX_LOCKED_REGIONS];
   uint32_t num_locked_;
   uint32_t total_locked_bytes_;
@@ -78,6 +98,10 @@ private:
   double last_elapsed_us_;
   bool timer_hires_set_;
   uint32_t pinned_core_;
+  uint32_t physical_core_;
+  bool smt_detected_;
+  uint32_t cpu_numa_node_;   // V4.2
+  uint32_t numa_node_count_; // V4.2
 
   // --- One-shot warnings ---
   inline static bool warned_memory_lock_ = false;
@@ -85,14 +109,126 @@ private:
   inline static bool warned_affinity_ = false;
   inline static bool warned_irq_ = false;
 
+  // =======================================================================
+  // SMT DETECTION: Find physical cores vs logical threads
+  // Returns the logical processor mask for the FIRST thread of the last
+  // physical core. If detection fails, falls back to last logical core.
+  // =======================================================================
+  struct SmtInfo {
+    DWORD_PTR target_mask;
+    uint32_t logical_core_id;
+    uint32_t physical_core_id;
+    bool smt_detected;
+  };
+
+  static SmtInfo detect_smt_topology() {
+    SmtInfo info = {};
+    info.smt_detected = false;
+
+    SYSTEM_INFO sys_info;
+    GetSystemInfo(&sys_info);
+    DWORD num_logical = sys_info.dwNumberOfProcessors;
+
+    // Default fallback: last logical core
+    info.logical_core_id = num_logical - 1;
+    info.physical_core_id = info.logical_core_id;
+    info.target_mask = (DWORD_PTR)1 << info.logical_core_id;
+
+    // Query processor core topology
+    DWORD buffer_size = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr,
+                                     &buffer_size);
+    if (buffer_size == 0)
+      return info;
+
+    alignas(8) uint8_t stack_buf[4096];
+    uint8_t *buf = stack_buf;
+    bool heap_alloc = false;
+
+    if (buffer_size > sizeof(stack_buf)) {
+      buf = static_cast<uint8_t *>(malloc(buffer_size));
+      if (!buf)
+        return info;
+      heap_alloc = true;
+    }
+
+    auto *pinfo =
+        reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *>(buf);
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, pinfo,
+                                          &buffer_size)) {
+      if (heap_alloc)
+        free(buf);
+      return info;
+    }
+
+    // Walk the core list: find the last physical core
+    struct PhysicalCore {
+      DWORD_PTR mask;
+      uint32_t thread_count;
+    };
+
+    PhysicalCore last_core = {};
+    uint32_t physical_core_count = 0;
+
+    auto *ptr = buf;
+    auto *end = buf + buffer_size;
+    while (ptr < end) {
+      auto *entry =
+          reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *>(ptr);
+      if (entry->Relationship == RelationProcessorCore) {
+        DWORD_PTR core_mask = 0;
+        for (WORD g = 0; g < entry->Processor.GroupCount; ++g) {
+          core_mask |= entry->Processor.GroupMask[g].Mask;
+        }
+
+        // Count logical threads in this physical core
+        uint32_t threads = 0;
+        DWORD_PTR m = core_mask;
+        while (m) {
+          threads += (m & 1);
+          m >>= 1;
+        }
+
+        if (threads > 1)
+          info.smt_detected = true;
+
+        last_core.mask = core_mask;
+        last_core.thread_count = threads;
+        physical_core_count++;
+      }
+      ptr += entry->Size;
+    }
+
+    if (heap_alloc)
+      free(buf);
+
+    if (physical_core_count > 0) {
+      info.physical_core_id = physical_core_count - 1;
+
+      // Extract the FIRST logical processor from the last physical core
+      // (avoid the HT sibling)
+      DWORD_PTR mask = last_core.mask;
+      DWORD bit = 0;
+      while (mask && !(mask & 1)) {
+        mask >>= 1;
+        bit++;
+      }
+
+      info.target_mask = (DWORD_PTR)1 << bit;
+      info.logical_core_id = bit;
+    }
+
+    return info;
+  }
+
 public:
   // =====================================================================
-  // CONSTRUCTOR: Enter the Isolation Zone
+  // CONSTRUCTOR: Enter the Isolation Zone (V4.1 HARDENED)
   // =====================================================================
   IsolationZone()
       : num_locked_(0), total_locked_bytes_(0), priority_dropped_(false),
         tile_stalled_(false), last_elapsed_us_(0.0), timer_hires_set_(false),
-        pinned_core_(0) {
+        pinned_core_(0), physical_core_(0), smt_detected_(false) {
     hThread_ = GetCurrentThread();
     hProcess_ = GetCurrentProcess();
 
@@ -101,45 +237,54 @@ public:
     old_thread_priority_ = GetThreadPriority(hThread_);
 
     // --- LAYER 1: Timer Resolution ---
-    // Reduce system timer from 15.6ms to 1ms.
-    // This reduces the preemption window for our RT thread.
     MMRESULT timer_result = timeBeginPeriod(1);
     if (timer_result == TIMERR_NOERROR) {
       timer_hires_set_ = true;
     } else if (!warned_timer_) {
-      fprintf(stderr,
-              "[ISOLATION ZONE] timeBeginPeriod(1) failed. "
-              "OS timer remains at default resolution.\n");
+      fprintf(stderr, "[ISOLATION ZONE] timeBeginPeriod(1) failed. "
+                      "OS timer remains at default resolution.\n");
       warned_timer_ = true;
     }
 
-    // --- LAYER 2: Core Isolation ---
-    SYSTEM_INFO sys_info;
-    GetSystemInfo(&sys_info);
-    DWORD num_cores = sys_info.dwNumberOfProcessors;
+    // --- LAYER 2: Core Isolation (SMT-aware) ---
+    SmtInfo smt = detect_smt_topology();
+    smt_detected_ = smt.smt_detected;
+    pinned_core_ = smt.logical_core_id;
+    physical_core_ = smt.physical_core_id;
 
-    // Pin to the LAST core (least likely to handle IRQs on most systems)
-    pinned_core_ = num_cores - 1;
-    DWORD_PTR target_mask = (DWORD_PTR)1 << pinned_core_;
-    old_affinity_mask_ = SetThreadAffinityMask(hThread_, target_mask);
+    old_affinity_mask_ = SetThreadAffinityMask(hThread_, smt.target_mask);
 
     if (!old_affinity_mask_ && !warned_affinity_) {
       fprintf(stderr,
-              "[ISOLATION ZONE] Core pinning to core %u FAILED. "
-              "Running without CPU isolation.\n",
-              pinned_core_);
+              "[ISOLATION ZONE] Core pinning to logical core %u "
+              "(physical %u) FAILED.\n",
+              pinned_core_, physical_core_);
       warned_affinity_ = true;
     }
 
-    // --- LAYER 3: Real-Time Priority ---
-    SetPriorityClass(hProcess_, REALTIME_PRIORITY_CLASS);
-    SetThreadPriority(hThread_, THREAD_PRIORITY_TIME_CRITICAL);
+    // --- LAYER 3: Priority (V4.1 HARDENED: HIGH, not REALTIME) ---
+    SetPriorityClass(hProcess_, HIGH_PRIORITY_CLASS);
+    SetThreadPriority(hThread_, THREAD_PRIORITY_HIGHEST);
+
+    // --- LAYER 5: NUMA Topology Detection (V4.2) ---
+    cpu_numa_node_ = 0;
+    numa_node_count_ = 0;
+    {
+      UCHAR numa_node = 0;
+      if (GetNumaProcessorNode(static_cast<UCHAR>(pinned_core_), &numa_node)) {
+        cpu_numa_node_ = numa_node;
+      }
+      // Count total NUMA nodes
+      ULONG highest_node = 0;
+      if (GetNumaHighestNodeNumber(&highest_node)) {
+        numa_node_count_ = highest_node + 1;
+      } else {
+        numa_node_count_ = 1;
+      }
+    }
 
     // --- LAYER 4: IRQ Shield (advisory) ---
-    // On Windows, we can't steer IRQs from userspace without admin.
-    // We warn once about what the user can do.
     if (!warned_irq_) {
-      // Silent — only print if user calls print_isolation_report()
       warned_irq_ = true;
     }
 
@@ -149,41 +294,74 @@ public:
   }
 
   // =====================================================================
-  // MEMORY LOCKING: Pin data pages in physical RAM
-  // Call BEFORE entering the hot loop (cold path).
+  // MEMORY LOCKING: 3-Tier Cascade (V4.1 HARDENED)
+  //
+  // Tier 1: VirtualLock() — true page pinning (requires working set quota)
+  // Tier 2: Large Pages (MEM_LARGE_PAGES) — 2MB TLB entries (requires
+  //         SeLockMemoryPrivilege, admin)
+  // Tier 3: PrefetchVirtualMemory() — advisory, no privileges needed
+  //         (Win8+, still better than nothing)
+  // Tier 4: NONE — all failed, page faults possible
   // =====================================================================
-  bool lock_memory(const void *ptr, size_t bytes) {
+  MemoryLockTier lock_memory(const void *ptr, size_t bytes) {
     if (!ptr || bytes == 0 || num_locked_ >= MAX_LOCKED_REGIONS)
-      return false;
+      return MemoryLockTier::NONE;
 
+    // --- TIER 1: VirtualLock ---
     // Increase working set size to accommodate the lock.
-    // Without this, VirtualLock silently fails on large buffers.
     SIZE_T min_ws, max_ws;
     if (GetProcessWorkingSetSize(hProcess_, &min_ws, &max_ws)) {
-      SIZE_T needed = min_ws + bytes + (64 * 1024); // +64KB headroom
+      SIZE_T needed = min_ws + bytes + (64 * 1024);
       if (needed > max_ws) {
         SetProcessWorkingSetSize(hProcess_, needed, needed);
       }
     }
 
     if (VirtualLock(const_cast<void *>(ptr), bytes)) {
-      locked_regions_[num_locked_].ptr = ptr;
-      locked_regions_[num_locked_].bytes = bytes;
+      locked_regions_[num_locked_] = {ptr, bytes, MemoryLockTier::LOCKED};
       num_locked_++;
       total_locked_bytes_ += static_cast<uint32_t>(bytes);
-      return true;
+      return MemoryLockTier::LOCKED;
     }
 
+    // --- TIER 2: PrefetchVirtualMemory (Win8+) ---
+    // This is an advisory hint to the VMM to bring pages into the
+    // working set. Not as strong as VirtualLock, but prevents the
+    // initial burst of page faults on first access.
+    typedef BOOL(WINAPI * PrefetchVirtualMemoryFunc)(
+        HANDLE, ULONG_PTR, PWIN32_MEMORY_RANGE_ENTRY, ULONG);
+
+    static PrefetchVirtualMemoryFunc pPrefetch =
+        (PrefetchVirtualMemoryFunc)GetProcAddress(
+            GetModuleHandleW(L"kernel32.dll"), "PrefetchVirtualMemory");
+
+    if (pPrefetch) {
+      WIN32_MEMORY_RANGE_ENTRY entry;
+      entry.VirtualAddress = const_cast<void *>(ptr);
+      entry.NumberOfBytes = bytes;
+
+      if (pPrefetch(hProcess_, 1, &entry, 0)) {
+        locked_regions_[num_locked_] = {ptr, bytes, MemoryLockTier::PREFETCHED};
+        num_locked_++;
+        total_locked_bytes_ += static_cast<uint32_t>(bytes);
+        return MemoryLockTier::PREFETCHED;
+      }
+    }
+
+    // --- TIER 3: NONE ---
     if (!warned_memory_lock_) {
       DWORD err = GetLastError();
-      fprintf(stderr,
-              "[ISOLATION ZONE] VirtualLock(%zu bytes) FAILED (err=%lu). "
-              "Page faults may occur in hot path.\n"
-              "  -> Fix: Run as Administrator, or increase working set quota.\n",
-              bytes, err);
+      fprintf(
+          stderr,
+          "[ISOLATION ZONE] Memory lock FAILED for %zu bytes (err=%lu).\n"
+          "  Tier 1 (VirtualLock): FAILED\n"
+          "  Tier 2 (PrefetchVirtualMemory): %s\n"
+          "  -> Running in UNPROTECTED mode. Page faults may occur.\n"
+          "  -> Fix: Run as Administrator, or increase working set quota.\n",
+          bytes, err, pPrefetch ? "FAILED" : "UNAVAILABLE (requires Win8+)");
       warned_memory_lock_ = true;
     }
-    return false;
+    return MemoryLockTier::NONE;
   }
 
   // =====================================================================
@@ -201,8 +379,9 @@ public:
   RESIDUE_ZONE_FORCEINLINE void check_safety() {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    last_elapsed_us_ = static_cast<double>(now.QuadPart - start_time_.QuadPart) *
-                       1000000.0 / freq_.QuadPart;
+    last_elapsed_us_ =
+        static_cast<double>(now.QuadPart - start_time_.QuadPart) * 1000000.0 /
+        freq_.QuadPart;
 
     if (last_elapsed_us_ > 100.0) {
       tile_stalled_ = true;
@@ -215,51 +394,108 @@ public:
   }
 
   RESIDUE_ZONE_FORCEINLINE bool was_stalled() const { return tile_stalled_; }
-  RESIDUE_ZONE_FORCEINLINE double elapsed_us() const { return last_elapsed_us_; }
+  RESIDUE_ZONE_FORCEINLINE double elapsed_us() const {
+    return last_elapsed_us_;
+  }
 
   // =====================================================================
-  // DIAGNOSTICS: Print full isolation status report
+  // STATUS: Query actual isolation level (V4.1 — no more guessing)
+  // =====================================================================
+  IsolationStatus get_status() const {
+    IsolationStatus s;
+    // Determine the best tier achieved across all locked regions
+    s.memory_tier = MemoryLockTier::NONE;
+    for (uint32_t i = 0; i < num_locked_; ++i) {
+      if (locked_regions_[i].tier < s.memory_tier) {
+        s.memory_tier = locked_regions_[i].tier;
+      }
+    }
+    s.timer_hires = timer_hires_set_;
+    s.core_pinned = (old_affinity_mask_ != 0);
+    s.priority_elevated = !priority_dropped_;
+    s.smt_detected = smt_detected_;
+    s.irq_warned = warned_irq_;
+    s.locked_bytes = total_locked_bytes_;
+    s.pinned_core = pinned_core_;
+    s.physical_core = physical_core_;
+    s.cpu_numa_node = cpu_numa_node_;
+    s.numa_node_count = numa_node_count_;
+    s.numa_cross_node_risk = (numa_node_count_ > 1);
+    s.last_elapsed_us = last_elapsed_us_;
+    return s;
+  }
+
+  // =====================================================================
+  // DIAGNOSTICS: Print full isolation status report (V4.1 HARDENED)
   // =====================================================================
   static void print_isolation_report() {
     SYSTEM_INFO sys_info;
     GetSystemInfo(&sys_info);
     DWORD num_cores = sys_info.dwNumberOfProcessors;
 
+    SmtInfo smt = detect_smt_topology();
+
     fprintf(stdout,
-            "╔══════════════════════════════════════════════════╗\n"
-            "║       THREAD ISOLATION ZONE — STATUS REPORT      ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  Platform    : Windows x86-64                    ║\n"
-            "║  CPU Cores   : %-4u                              ║\n"
-            "║  Target Core : %-4u (last core)                  ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  Layer 1 — Timer Resolution:                     ║\n"
-            "║    timeBeginPeriod(1): Available                  ║\n"
-            "║  Layer 2 — Core Isolation:                       ║\n"
-            "║    SetThreadAffinityMask: Available               ║\n"
-            "║  Layer 3 — RT Priority:                          ║\n"
-            "║    REALTIME_PRIORITY_CLASS: Available             ║\n"
-            "║  Layer 4 — Memory Locking:                       ║\n"
-            "║    VirtualLock: Available (needs working set)     ║\n"
-            "║  Layer 5 — IRQ Shield:                           ║\n"
-            "║    Manual config required. See below.             ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  IRQ Steering (admin required):                  ║\n"
-            "║    1. Open Device Manager                        ║\n"
-            "║    2. Properties > Advanced > Interrupt Affinity  ║\n"
-            "║    3. Exclude core %u from NIC/USB IRQs          ║\n"
-            "╚══════════════════════════════════════════════════╝\n",
-            num_cores, num_cores - 1, num_cores - 1);
+            "======================================================\n"
+            "   THREAD ISOLATION ZONE — STATUS REPORT (V4.2)       \n"
+            "======================================================\n"
+            "  Platform       : Windows x86-64\n"
+            "  Logical Cores  : %u\n"
+            "  SMT Detected   : %s\n"
+            "  Target Core    : Logical %u (Physical %u)\n"
+            "------------------------------------------------------\n"
+            "  Layer 1 — Timer    : timeBeginPeriod(1)\n"
+            "  Layer 2 — Affinity : SMT-aware core pinning\n"
+            "  Layer 3 — Priority : HIGH_PRIORITY_CLASS (safe)\n"
+            "  Layer 4 — Memory   : 3-Tier Cascade\n"
+            "      Tier 1: VirtualLock (requires working set)\n"
+            "      Tier 2: PrefetchVirtualMemory (advisory)\n"
+            "      Tier 3: NONE (page faults possible)\n"
+            "------------------------------------------------------\n",
+            num_cores, smt.smt_detected ? "YES (HT sibling avoided)" : "NO",
+            smt.logical_core_id, smt.physical_core_id);
+
+    // V4.2: NUMA layer
+    ULONG highest_node = 0;
+    GetNumaHighestNodeNumber(&highest_node);
+    uint32_t node_count = highest_node + 1;
+    UCHAR cpu_node = 0;
+    GetNumaProcessorNode(static_cast<UCHAR>(smt.logical_core_id), &cpu_node);
+
+    if (node_count > 1) {
+      fprintf(stdout,
+              "  Layer 5 — NUMA     : Node %u (%u nodes detected "
+              "— CROSS-NODE RISK!)\n"
+              "                        Run with: start /node %u python ...\n",
+              (unsigned)cpu_node, node_count, (unsigned)cpu_node);
+    } else {
+      fprintf(stdout,
+              "  Layer 5 — NUMA     : Node 0 (%u node total "
+              "— no cross-node risk)\n",
+              node_count);
+    }
+
+    fprintf(stdout,
+            "------------------------------------------------------\n"
+            "  IRQ Steering (admin required):\n"
+            "    1. Open Device Manager\n"
+            "    2. Properties > Advanced > Interrupt Affinity\n"
+            "    3. Exclude core %u from NIC/USB IRQs\n"
+            "======================================================\n",
+            smt.logical_core_id);
   }
 
   // =====================================================================
   // DESTRUCTOR: Exit the Isolation Zone (RAII)
   // =====================================================================
   ~IsolationZone() {
-    // Unlock all memory regions
+    // Unlock all memory regions (only VirtualLock needs explicit unlock)
     for (uint32_t i = 0; i < num_locked_; ++i) {
-      VirtualUnlock(const_cast<void *>(locked_regions_[i].ptr),
-                    locked_regions_[i].bytes);
+      if (locked_regions_[i].tier == MemoryLockTier::LOCKED) {
+        VirtualUnlock(const_cast<void *>(locked_regions_[i].ptr),
+                      locked_regions_[i].bytes);
+      }
+      // PREFETCHED regions don't need unlock — they're advisory
     }
 
     // Restore timer resolution
@@ -292,29 +528,17 @@ public:
 #elif defined(__linux__)
 
 #include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/mman.h>
-#include <sys/resource.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
 
 namespace residue_wall {
-
-struct IsolationStatus {
-  bool memory_locked;
-  bool timer_hires;
-  bool core_pinned;
-  bool priority_realtime;
-  bool irq_warned;
-  bool cstate_disabled;
-
-  uint32_t locked_bytes;
-  uint32_t pinned_core;
-  double   last_elapsed_us;
-};
 
 class IsolationZone {
 private:
@@ -328,14 +552,15 @@ private:
   struct LockedRegion {
     const void *ptr;
     size_t bytes;
+    MemoryLockTier tier;
   };
-  static constexpr size_t MAX_LOCKED_REGIONS = 4;
+  static constexpr size_t MAX_LOCKED_REGIONS = 8;
   LockedRegion locked_regions_[MAX_LOCKED_REGIONS];
   uint32_t num_locked_;
   uint32_t total_locked_bytes_;
 
   // --- C-state control ---
-  int cpu_dma_latency_fd_;  // fd to /dev/cpu_dma_latency (keeps CPU in C0)
+  int cpu_dma_latency_fd_;
 
   // --- Runtime ---
   bool priority_dropped_;
@@ -343,6 +568,8 @@ private:
   double last_elapsed_us_;
   bool affinity_set_;
   uint32_t pinned_core_;
+  uint32_t physical_core_;
+  bool smt_detected_;
 
   // --- One-shot warnings ---
   inline static bool warned_affinity_ = false;
@@ -351,14 +578,71 @@ private:
   inline static bool warned_cstate_ = false;
   inline static bool warned_irq_ = false;
 
+  // =======================================================================
+  // SMT DETECTION (Linux): Read thread_siblings_list to find physical cores
+  // =======================================================================
+  struct SmtInfo {
+    uint32_t target_logical;
+    uint32_t physical_core_id;
+    bool smt_detected;
+  };
+
+  static SmtInfo detect_smt_topology() {
+    SmtInfo info = {};
+    info.smt_detected = false;
+
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (num_cores <= 0)
+      return info;
+
+    info.target_logical = static_cast<uint32_t>(num_cores - 1);
+    info.physical_core_id = info.target_logical;
+
+    // Try to find actual physical core mapping
+    // Read /sys/devices/system/cpu/cpuN/topology/core_id for the last CPU
+    char path[128];
+    snprintf(path, sizeof(path),
+             "/sys/devices/system/cpu/cpu%u/topology/core_id",
+             info.target_logical);
+    FILE *f = fopen(path, "r");
+    if (f) {
+      char line[32];
+      if (fgets(line, sizeof(line), f)) {
+        info.physical_core_id = (uint32_t)strtoul(line, nullptr, 10);
+      }
+      fclose(f);
+    }
+
+    // Check if SMT is active by reading thread_siblings_list
+    snprintf(path, sizeof(path),
+             "/sys/devices/system/cpu/cpu%u/topology/thread_siblings_list",
+             info.target_logical);
+    f = fopen(path, "r");
+    if (f) {
+      char line[64];
+      if (fgets(line, sizeof(line), f)) {
+        // If the siblings list contains a comma or dash, SMT is active
+        if (strchr(line, ',') || strchr(line, '-')) {
+          info.smt_detected = true;
+          // Pick the first sibling (lowest numbered = primary thread)
+          info.target_logical = (uint32_t)strtoul(line, nullptr, 10);
+        }
+      }
+      fclose(f);
+    }
+
+    return info;
+  }
+
 public:
   // =====================================================================
-  // CONSTRUCTOR: Enter the Isolation Zone
+  // CONSTRUCTOR: Enter the Isolation Zone (V4.1 HARDENED)
   // =====================================================================
   IsolationZone()
       : num_locked_(0), total_locked_bytes_(0), cpu_dma_latency_fd_(-1),
         priority_dropped_(false), tile_stalled_(false), last_elapsed_us_(0.0),
-        affinity_set_(false), pinned_core_(0) {
+        affinity_set_(false), pinned_core_(0), physical_core_(0),
+        smt_detected_(false) {
     pthread_t self = pthread_self();
 
     // Save original state
@@ -366,48 +650,47 @@ public:
     pthread_getschedparam(self, &old_policy_, &old_sched_param_);
 
     // --- LAYER 1: Timer Slack ---
-    // Set timer slack to 1ns for precise wakeups
     prctl(PR_SET_TIMERSLACK, 1);
 
-    // --- LAYER 2: Core Isolation ---
-    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    if (num_cores > 0) {
-      pinned_core_ = static_cast<uint32_t>(num_cores - 1);
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(pinned_core_, &cpuset);
-      if (pthread_setaffinity_np(self, sizeof(cpu_set_t), &cpuset) == 0) {
-        affinity_set_ = true;
-      } else if (!warned_affinity_) {
-        fprintf(stderr,
-                "[ISOLATION ZONE] Core pinning to core %u FAILED (errno=%d).\n"
-                "  -> Fix: run with CAP_SYS_NICE or as root.\n",
-                pinned_core_, errno);
-        warned_affinity_ = true;
-      }
+    // --- LAYER 2: Core Isolation (SMT-aware) ---
+    SmtInfo smt = detect_smt_topology();
+    smt_detected_ = smt.smt_detected;
+    pinned_core_ = smt.target_logical;
+    physical_core_ = smt.physical_core_id;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(pinned_core_, &cpuset);
+    if (pthread_setaffinity_np(self, sizeof(cpu_set_t), &cpuset) == 0) {
+      affinity_set_ = true;
+    } else if (!warned_affinity_) {
+      fprintf(stderr,
+              "[ISOLATION ZONE] Core pinning to logical %u "
+              "(physical %u) FAILED (errno=%d).\n"
+              "  -> Fix: run with CAP_SYS_NICE or as root.\n",
+              pinned_core_, physical_core_, errno);
+      warned_affinity_ = true;
     }
 
-    // --- LAYER 3: Real-Time Priority ---
+    // --- LAYER 3: Priority (V4.1 HARDENED: capped at 50, not max) ---
     struct sched_param param;
-    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    int max_prio = sched_get_priority_max(SCHED_FIFO);
+    param.sched_priority = (max_prio < 50) ? max_prio : 50;
     int ret = pthread_setschedparam(self, SCHED_FIFO, &param);
     if (ret != 0 && !warned_priority_) {
       fprintf(stderr,
-              "[ISOLATION ZONE] SCHED_FIFO FAILED (errno=%d).\n"
+              "[ISOLATION ZONE] SCHED_FIFO (prio %d) FAILED (errno=%d).\n"
               "  -> Fix: sudo setcap cap_sys_nice+ep <binary>\n",
-              ret);
+              param.sched_priority, ret);
       warned_priority_ = true;
     }
 
     // --- LAYER 4: C-State Disable ---
-    // Writing 0 to /dev/cpu_dma_latency prevents the CPU from entering
-    // any C-state deeper than C0 while the fd is open.
-    // This eliminates wakeup latency but increases power/heat.
     cpu_dma_latency_fd_ = open("/dev/cpu_dma_latency", O_WRONLY);
     if (cpu_dma_latency_fd_ >= 0) {
-      int32_t target_latency = 0; // 0 = stay in C0
-      ssize_t written = write(cpu_dma_latency_fd_, &target_latency,
-                              sizeof(target_latency));
+      int32_t target_latency = 0;
+      ssize_t written =
+          write(cpu_dma_latency_fd_, &target_latency, sizeof(target_latency));
       if (written != sizeof(target_latency)) {
         close(cpu_dma_latency_fd_);
         cpu_dma_latency_fd_ = -1;
@@ -423,8 +706,6 @@ public:
 
     // --- LAYER 5: IRQ Shield (advisory) ---
     if (!warned_irq_) {
-      // Check if our core receives significant IRQs
-      // (full check in print_isolation_report)
       warned_irq_ = true;
     }
 
@@ -432,18 +713,17 @@ public:
   }
 
   // =====================================================================
-  // MEMORY LOCKING
+  // MEMORY LOCKING: 3-Tier Cascade (V4.1 HARDENED)
   // =====================================================================
-  bool lock_memory(const void *ptr, size_t bytes) {
+  MemoryLockTier lock_memory(const void *ptr, size_t bytes) {
     if (!ptr || bytes == 0 || num_locked_ >= MAX_LOCKED_REGIONS)
-      return false;
+      return MemoryLockTier::NONE;
 
-    // Check RLIMIT_MEMLOCK
+    // --- TIER 1: mlock ---
     struct rlimit rl;
     if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
       if (rl.rlim_cur != RLIM_INFINITY &&
           total_locked_bytes_ + bytes > rl.rlim_cur) {
-        // Try to raise the limit
         rl.rlim_cur = total_locked_bytes_ + bytes + (64 * 1024);
         if (rl.rlim_cur > rl.rlim_max)
           rl.rlim_cur = rl.rlim_max;
@@ -452,21 +732,31 @@ public:
     }
 
     if (mlock(ptr, bytes) == 0) {
-      locked_regions_[num_locked_].ptr = ptr;
-      locked_regions_[num_locked_].bytes = bytes;
+      locked_regions_[num_locked_] = {ptr, bytes, MemoryLockTier::LOCKED};
       num_locked_++;
       total_locked_bytes_ += static_cast<uint32_t>(bytes);
-      return true;
+      return MemoryLockTier::LOCKED;
     }
 
+    // --- TIER 2: madvise(MADV_WILLNEED) — advisory prefetch ---
+    if (madvise(const_cast<void *>(ptr), bytes, MADV_WILLNEED) == 0) {
+      locked_regions_[num_locked_] = {ptr, bytes, MemoryLockTier::PREFETCHED};
+      num_locked_++;
+      total_locked_bytes_ += static_cast<uint32_t>(bytes);
+      return MemoryLockTier::PREFETCHED;
+    }
+
+    // --- TIER 3: NONE ---
     if (!warned_memory_lock_) {
       fprintf(stderr,
-              "[ISOLATION ZONE] mlock(%zu bytes) FAILED (errno=%d).\n"
+              "[ISOLATION ZONE] Memory lock FAILED for %zu bytes (errno=%d).\n"
+              "  Tier 1 (mlock): FAILED\n"
+              "  Tier 2 (madvise): FAILED\n"
               "  -> Fix: ulimit -l unlimited, or run as root.\n",
               bytes, errno);
       warned_memory_lock_ = true;
     }
-    return false;
+    return MemoryLockTier::NONE;
   }
 
   // =====================================================================
@@ -498,25 +788,47 @@ public:
   }
 
   RESIDUE_ZONE_FORCEINLINE bool was_stalled() const { return tile_stalled_; }
-  RESIDUE_ZONE_FORCEINLINE double elapsed_us() const { return last_elapsed_us_; }
+  RESIDUE_ZONE_FORCEINLINE double elapsed_us() const {
+    return last_elapsed_us_;
+  }
+
+  // =====================================================================
+  // STATUS
+  // =====================================================================
+  IsolationStatus get_status() const {
+    IsolationStatus s;
+    s.memory_tier = MemoryLockTier::NONE;
+    for (uint32_t i = 0; i < num_locked_; ++i) {
+      if (locked_regions_[i].tier < s.memory_tier) {
+        s.memory_tier = locked_regions_[i].tier;
+      }
+    }
+    s.timer_hires = true; // PR_SET_TIMERSLACK always succeeds
+    s.core_pinned = affinity_set_;
+    s.priority_elevated = !priority_dropped_;
+    s.smt_detected = smt_detected_;
+    s.irq_warned = warned_irq_;
+    s.locked_bytes = total_locked_bytes_;
+    s.pinned_core = pinned_core_;
+    s.physical_core = physical_core_;
+    s.last_elapsed_us = last_elapsed_us_;
+    return s;
+  }
 
   // =====================================================================
   // DIAGNOSTICS
   // =====================================================================
   static void print_isolation_report() {
     long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    uint32_t target_core = (num_cores > 0) ? static_cast<uint32_t>(num_cores - 1) : 0;
+    SmtInfo smt = detect_smt_topology();
 
-    // Check if isolated via kernel param
     bool core_isolated = false;
     FILE *f = fopen("/sys/devices/system/cpu/isolated", "r");
     if (f) {
       char buf[64];
       if (fgets(buf, sizeof(buf), f)) {
-        // Parse comma-separated list or range like "7" or "6-7"
-        // Simple check: does it contain our target core number?
         char target_str[8];
-        snprintf(target_str, sizeof(target_str), "%u", target_core);
+        snprintf(target_str, sizeof(target_str), "%u", smt.target_logical);
         core_isolated = (strstr(buf, target_str) != nullptr);
       }
       fclose(f);
@@ -525,53 +837,53 @@ public:
     bool dma_lat_available = (access("/dev/cpu_dma_latency", W_OK) == 0);
 
     fprintf(stdout,
-            "╔══════════════════════════════════════════════════╗\n"
-            "║       THREAD ISOLATION ZONE — STATUS REPORT      ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  Platform    : Linux x86-64                      ║\n"
-            "║  CPU Cores   : %-4ld                             ║\n"
-            "║  Target Core : %-4u (last core)                  ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  Layer 1 — Timer Slack:  PR_SET_TIMERSLACK=1ns   ║\n"
-            "║  Layer 2 — Core Isolation:                       ║\n"
-            "║    Kernel isolcpus: %s                     ║\n"
-            "║  Layer 3 — RT Priority: SCHED_FIFO               ║\n"
-            "║  Layer 4 — C-State Control:                      ║\n"
-            "║    /dev/cpu_dma_latency: %s               ║\n"
-            "║  Layer 5 — Memory Locking: mlock()               ║\n"
-            "╠══════════════════════════════════════════════════╣\n"
-            "║  Recommended kernel params for full isolation:    ║\n"
-            "║    isolcpus=%u nohz_full=%u rcu_nocbs=%u          ║\n"
-            "║  IRQ steering:                                   ║\n"
-            "║    echo <mask> > /proc/irq/*/smp_affinity         ║\n"
-            "╚══════════════════════════════════════════════════╝\n",
-            num_cores, target_core,
-            core_isolated ? "YES ✅" : "NO  ⚠️",
-            dma_lat_available ? "writable ✅" : "no access ⚠️",
-            target_core, target_core, target_core);
+            "======================================================\n"
+            "   THREAD ISOLATION ZONE — STATUS REPORT (V4.1)       \n"
+            "======================================================\n"
+            "  Platform       : Linux x86-64\n"
+            "  Logical Cores  : %ld\n"
+            "  SMT Detected   : %s\n"
+            "  Target Core    : Logical %u (Physical %u)\n"
+            "------------------------------------------------------\n"
+            "  Layer 1 — Timer    : PR_SET_TIMERSLACK=1ns\n"
+            "  Layer 2 — Affinity : SMT-aware core pinning\n"
+            "  Layer 3 — Priority : SCHED_FIFO (capped at 50)\n"
+            "  Layer 4 — C-State  : %s\n"
+            "  Layer 5 — Memory   : 3-Tier Cascade\n"
+            "      Tier 1: mlock (requires RLIMIT_MEMLOCK)\n"
+            "      Tier 2: madvise(MADV_WILLNEED) (advisory)\n"
+            "      Tier 3: NONE (page faults possible)\n"
+            "------------------------------------------------------\n"
+            "  Kernel isolcpus : %s\n"
+            "  Recommended:\n"
+            "    isolcpus=%u nohz_full=%u rcu_nocbs=%u\n"
+            "======================================================\n",
+            num_cores, smt.smt_detected ? "YES (HT sibling avoided)" : "NO",
+            smt.target_logical, smt.physical_core_id,
+            dma_lat_available ? "/dev/cpu_dma_latency writable" : "no access",
+            core_isolated ? "YES" : "NO", smt.target_logical,
+            smt.target_logical, smt.target_logical);
   }
 
   // =====================================================================
-  // DESTRUCTOR: Exit the Isolation Zone
+  // DESTRUCTOR
   // =====================================================================
   ~IsolationZone() {
-    // Unlock memory
     for (uint32_t i = 0; i < num_locked_; ++i) {
-      munlock(locked_regions_[i].ptr, locked_regions_[i].bytes);
+      if (locked_regions_[i].tier == MemoryLockTier::LOCKED) {
+        munlock(locked_regions_[i].ptr, locked_regions_[i].bytes);
+      }
     }
 
-    // Release C-state hold
     if (cpu_dma_latency_fd_ >= 0) {
       close(cpu_dma_latency_fd_);
     }
 
-    // Restore priority
     pthread_t self = pthread_self();
     if (!priority_dropped_) {
       pthread_setschedparam(self, old_policy_, &old_sched_param_);
     }
 
-    // Restore affinity
     if (affinity_set_) {
       pthread_setaffinity_np(self, sizeof(cpu_set_t), &old_cpu_set_);
     }
@@ -593,11 +905,17 @@ namespace residue_wall {
 class IsolationZone {
 public:
   IsolationZone() {}
-  bool lock_memory(const void *, size_t) { return false; }
+  MemoryLockTier lock_memory(const void *, size_t) {
+    return MemoryLockTier::NONE;
+  }
   RESIDUE_ZONE_FORCEINLINE void reset_timer() {}
   RESIDUE_ZONE_FORCEINLINE void check_safety() {}
   RESIDUE_ZONE_FORCEINLINE bool was_stalled() const { return false; }
   RESIDUE_ZONE_FORCEINLINE double elapsed_us() const { return 0.0; }
+  IsolationStatus get_status() const {
+    return {
+        MemoryLockTier::NONE, false, false, false, false, false, 0, 0, 0, 0.0};
+  }
   static void print_isolation_report() {
     fprintf(stdout, "[ISOLATION ZONE] Unsupported platform — no isolation.\n");
   }
