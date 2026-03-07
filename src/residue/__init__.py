@@ -1,6 +1,6 @@
 """
 Project Residue: Bare-Metal AVX2 Inference Shield for LLMs
-V4.2.3 Reality-Synchronized Engine
+V4.2.4 Reality-Synchronized Engine
 """
 
 from .core import AsyncObserver, print_isolation_report

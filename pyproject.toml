@@ -12,10 +12,10 @@ description = "Bare-Metal AVX2 Inference Shield for LLMs"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Orestis", email = "orestis@example.com"}
+    {name = "Orestis", email = "orestisgatos@gmail.com"}
 ]
 maintainers = [
-    {name = "Orestis", email = "orestis@example.com"}
+    {name = "Orestis", email = "orestisgatos@gmail.com"}
 ]
 keywords = ["inference", "optimization", "llm", "entropy", "scaling", "structural-heuristics"]
 classifiers = [
