@@ -29,7 +29,7 @@ setup(
     name="residue-protocol",
     version="4.2.0",
     author="PROJECT RESIDUE",
-    author_email="[EMAIL_ADDRESS]",
+    author_email="orestisgatos@gmail.com",
     description="Bare-Metal AVX2 Inference Shield - V4.0",
     long_description="PROJECT RESIDUE V4.0 - Bare-Metal Architecture with OS Bypass and Branchless Dispatch",
     ext_modules=ext_modules,
