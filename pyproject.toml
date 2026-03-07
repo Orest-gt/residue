@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "residue-protocol"
-version = "4.2.2"
+version = "4.2.3"
 description = "Bare-Metal AVX2 Inference Shield for LLMs"
 readme = "README.md"
 license = {text = "MIT"}
@@ -48,6 +48,7 @@ dev = [
     "flake8",
     "mypy"
 ]
+build = [
     "pybind11>=2.13.6",
     "scikit-build-core>=0.4.0",
     "cmake>=3.15",
