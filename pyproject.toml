@@ -1,13 +1,10 @@
 [build-system]
 requires = [
-    "setuptools>=61.0", 
-    "wheel", 
-    "pybind11>=2.6.0",
-    "scikit-build-core>=0.4.0",
-    "cmake>=3.15",
-    "ninja; sys_platform != 'win32'"
+    "setuptools>=61.0",
+    "wheel",
+    "pybind11>=2.6.0"
 ]
-build-backend = "scikit_build_core.build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "residue-protocol"
@@ -66,21 +63,13 @@ Repository = "https://github.com/Orest-gt/residue.git"
 "Bug Tracker" = "https://github.com/Orest-gt/residue/issues"
 
 [tool.setuptools]
-packages = ["residue_v2"]
+packages = ["residue"]
 
 [tool.setuptools.package-dir]
-residue_v2 = "src/residue_v2"
+"" = "src"
 
 [tool.setuptools.package-data]
-residue_v2 = ["*.pyd", "*.so", "*.dll"]
-
-[tool.scikit-build]
-cmake.version = ">=3.15"
-cmake.build-type = "Release"
-cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]
-wheel.packages = ["src/residue_v2"]
-wheel.license-files = ["LICENSE"]
-wheel.install-dir = "residue_v2"
+residue = ["*.pyd", "*.so", "*.dll"]
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
