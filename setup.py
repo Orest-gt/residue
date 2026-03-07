@@ -26,8 +26,8 @@ ext_modules = [
 ]
 
 setup(
-    name="residue",
-    version="4.0.0",
+    name="residue-protocol",
+    version="4.2.0",
     author="PROJECT RESIDUE",
     author_email="[EMAIL_ADDRESS]",
     description="Bare-Metal AVX2 Inference Shield - V4.0",
