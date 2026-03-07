@@ -32,10 +32,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
-test_*.py
-*_test.py
-*_validation.py
-*_analysis.py
 
 # Temporary files
 *.tmp
@@ -62,4 +58,3 @@ quick_*.py
 manual_*.py
 final_*.py
 build_*.py
-setup_*.py

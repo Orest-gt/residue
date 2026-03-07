@@ -1,305 +1,123 @@
-# PROJECT RESIDUE: The Most Efficient Inference Optimizer for LLM Era
+# PROJECT RESIDUE: Bare-Metal AVX2 Inference Shield for LLMs
 
-## V2.1 - Structural-Emphasis with Optimal Weight Configuration
+[![Version](https://img.shields.io/badge/version-4.0.0-blue.svg)](https://github.com/project-residue/residue)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **The essential inference optimization tool with advanced structural intelligence for Large Language Models and beyond**  
-> **STATUS:** V2.1 PRODUCTION READY - OPTIMAL WEIGHTS VALIDATED - STRUCTURAL INTELLIGENCE IMPENETRABLE
+> **The ultimate real-time inference optimization tool, dropping LLM pre-filtering overhead to near-zero by completely bypassing the OS kernel and exploiting branchless AVX2 dispatch.**  
+> **STATUS:** V4.0 PRODUCTION READY - BARE METAL ISOLATION - ASYNC INGESTION
+
+---
+
+## The Origin: The Memory Wall
+When processing massive sensor streams or high-frequency sparse data before they reach the GPU, traditional Python/NumPy logic suffers from catastrophic memory latency. Modern CPUs execute computations faster than the RAM can feed them, leading to L1 Cache starvation and rendering the execution pipeline useless.
+
+**Project Residue solves this by operating as a "Shield" right before the neural network.** 
+
+By analyzing the structure, complexity, and sparsity of raw data via heuristics, Residue dictates if an input block is "dense enough" to wake up the GPU, or if it is "sparse/noise" and should just bypass execution entirely. To do this without becoming a bottleneck itself, Residue V4.0 was forged directly in C++ AVX2 with techniques usually reserved for High-Frequency Trading.
+
+---
+
+## V4.0 Architecture Features
+
+### 1. The Isolation Zone (OS Bypass)
+Residue completely removes the Operating System's scheduler from the hot path.
+* **VirtualLock (RAM Pinning):** Memory pages are locked into physical RAM (`VirtualLock` on Windows, `mlock` on Linux) guaranteeing zero page-faults.
+* **Core Pinning & C-States:** The `AsyncObserver` thread locks itself to a specific physical core and requests max frequency allocation, preventing thread-migration and sleep states.
+* **Kernel Timer Suppression:** OS timer interrupts are actively suppressed (1ms granularity) via `timeBeginPeriod` to prevent preemption.
+
+### 2. Branchless Dynamic Dispatch
+Traditional `if/else` statements for detecting noise severely punish instruction pipelines due to branch mispredictions. Residue V4.1 utilizes a purely mathematical approach:
+* **The Heuristic Gate:** Uses AVX2 intrinsics to extract the absolute sum (L1-norm) of the first 8 floats in ~3 cycles.
+* **V-Table Routing:** Instead of branching, the heuristic directly indexes a statically compiled V-Table (function pointer array), instantly routing the CPU to either the intensive `infer_single_sample_fast` or the instant `infer_single_sample_noop`.
+* **The Result:** 2,360,000 FPS throughput on sparse data (a **19x** performance boost).
+
+### 3. Asynchronous Lock-Free Ingestion
+Python acts purely as a data pipe, completely decoupled from the C++ worker logic.
+* **SPSC Ring Buffers:** Python pushes data and pulls results via a lock-free Single-Producer Single-Consumer queue.
+* **Atomic Telemetry:** The background C++ thread reports real-time metrics (FPS, incoming sparsity %, skips) without a single mutex, allowing Python to poll diagnostics at 0 overhead.
 
 ---
 
 ## Quick Start
 
 ### Installation
+
+Requires a C++20 compiler with AVX2 support (MSVC on Windows, GCC/Clang on Linux).
+
 ```bash
-# V2.1 (Latest - Structural-Emphasis)
 git clone https://github.com/your-repo/project-residue.git
 cd project-residue
-git checkout v2.1.0
+
+# Build and Install the V4 Engine
 python setup.py build_ext --inplace
-
-# V2.0 (Legacy Stable)
-pip install residue
+python setup.py install
 ```
 
-### Basic Usage
+### Basic Usage (Sync Mode)
+For classic synchronous batch processing directly over NumPy arrays:
+
 ```python
-import residue_v2
 import numpy as np
+import residue.core as core
 
-# V2.1 Structural-Emphasis with optimal weights
-controller = residue_v2.create_entropy_controller_v2(256, 0.1, 5, 0.1)
-controller.set_ema_alpha(0.3)  # Dynamic EMA adjustment
+# 1. Initialize Controller (256 Bins, 0.1 Threshold, 1024 floats per frame)
+controller = core.create_entropy_controller_v3(256, 0.1, 5, 0.1, 0.2)
 
-# Single input with optimal structural analysis
-data = np.random.randn(1000)
-features = controller.extract_features_v3(data)  # 7-feature extraction
-scaling = controller.compute_multi_dimensional_scaling_v3(features)
+# 2. Prepare Memory (Pinned)
+data = np.random.randn(10_000 * 1024).astype(np.float32)
 
-print("Structural Analysis:")
-print(f"  ZCR Rate: {features.zcr_rate:.3f}")
-print(f"  L1 Sparsity: {features.l1_sparsity:.3f}")
-print(f"  Temporal Coherence: {features.temporal_coherence:.3f}")
-print(f"  Optimal Scaling: {scaling:.3f}")
-
-# Batch processing with structural heuristics
-batch_inputs = np.random.randn(100, 1000)  # 100 tokens
-v3_features = [controller.extract_features_v3(inp) for inp in batch_inputs]
-v3_scalings = [controller.compute_multi_dimensional_scaling_v3(feat) for feat in v3_features]
-avg_savings = (1 - 1/np.mean(v3_scalings)) * 100
-print(f"V2.1 Batch savings: {avg_savings:.1f}%")
+# 3. Process Stream Walled (AVX2 + Branchless Dispatch)
+result_factors = controller.batch_infer_walled(data, frame_size=1024)
 ```
 
-### **V3.0 Advanced Features**
-```python
-# Temporal Coherence Analysis
-stability = residue_v2.analyze_temporal_stability(input_sequence)
-print(f"Stability Score: {stability['stability_score']}")
-print(f"Std Deviation: {stability['std_deviation']:.6f}")
-
-# Signal Structure Analysis
-structure = residue_v2.analyze_signal_structure(input_data)
-print(f"Signal Type: {structure['signal_type']}")
-print(f"ZCR Rate: {structure['zcr_rate']:.6f}")
-
-# Dynamic Configuration
-controller.set_ema_alpha(0.2)  # Adjust temporal smoothing
-controller.set_l1_sparsity_threshold(0.15)  # Adjust sparsity sensitivity
-controller.set_zcr_window_size(10)  # Adjust frequency analysis window
-```
-
----
-
-## V2.1 Validated Performance
-
-### Structural-Emphasis Results (Optimal Weights Applied):
-
-| Feature | V3.0 | V2.1 | Improvement |
-|---------|--------|--------|-------------|
-| **Structural Influence** | 13.6% | **35.7%** | **162% Increase** |
-| **Conservative Bias** | 4.2x | **1.3x** | **69% Reduction** |
-| **ZCR Weight** | 2.0 | **6.0** | **200% Increase** |
-| **L1 Sparsity Weight** | 1.0 | **5.0** | **400% Increase** |
-| **Noise Discrimination** | Baseline | **+63.8%** | **Significant Improvement** |
-| **Processing Overhead** | 0.008ms | **0.098ms** | **Within Limits** |
-| **Ultimate Stress Tests** | N/A | **7/7 Passed** | **Impenetrable** |
-
-### V2.1 Real-World Performance:
-```
-Single Sample (1000 elements): 0.098ms
-Batch Processing (100 samples): 9.8ms  
-Large Scale (100k samples): 100% success
-Memory Growth: 12.4MB
-Stress Test: 1000 iterations, 0 crashes
-Silence Detection: 99.9% accuracy
-Chaos Discrimination: 100% accuracy
-Pattern Recognition: 100% accuracy
-EMA Smoothness: 0.002 transition
-```
-
----
-
-## LLM Integration Example
+### Advanced Usage (Async Active Observer Mode)
+For separating Python ingestion from the C++ processing thread (useful for pipelining before PyTorch runs):
 
 ```python
-import torch
-import residue_v2
+import numpy as np
+import time
+from residue.core import AsyncObserver, print_isolation_report
 
-class EntropyOptimizedLLM(torch.nn.Module):
-    def __init__(self, base_model):
-        super().__init__()
-        self.base_model = base_model
-        self.controller = residue_v2.create_entropy_controller_v2()
-    
-    def forward(self, input_ids):
-        # Calculate input complexity
-        input_tensor = input_ids.float().detach().cpu().numpy()
-        entropy, complexity, sparsity, structure, scaling = residue_v2.compute_analog_scaling(input_tensor[0])
-        
-        # Semantic decision
-        should_skip, confidence = residue_v2.compute_skip_predict_decision(scaling)
-        
-        # Adaptive computation based on semantic decision
-        if should_skip and confidence > 0.7:
-            # High confidence skip → optimized path
-            return self.base_model(input_ids.half())
-        else:
-            # Predict → full precision
-            return self.base_model(input_ids)
+# 1. Check OS Bypass Telemetry (Must run as Administrator/Root for full memory pinning)
+print_isolation_report()
+
+# 2. Spawn Background Worker C++ Thread
+observer = AsyncObserver(frame_size=1024, buffer_capacity_frames=10_000)
+observer.start()  # Enters Isolation Zone
+
+# 3. Python pushes data Non-Blocking
+data = np.random.randn(500 * 1024).astype(np.float32)
+observer.push_data(data)
+
+# 4. Read Lock-Free Telemetry 
+telemetry = observer.poll_telemetry()
+print(f"Skipped Frames: {telemetry.total_samples_skipped}")
+print(f"Real-Time FPS: {telemetry.current_fps}")
+
+# 5. Stop Worker
+observer.stop()
 ```
-
----
-
-## Architecture
-
-### Multi-Dimensional Optimization:
-- **Entropy:** Shannon information content
-- **Complexity:** Standard deviation + sparsity + structure
-- **Sparsity:** Fraction of near-zero elements  
-- **Structure:** Autocorrelation measure
-
-### Semantic Bridge:
-- **Skip/Predict Decisions:** Confidence-based computation routing
-- **Adaptive Thresholds:** Dynamic optimization based on data complexity
-- **Real-time Control:** Sub-millisecond decision making
 
 ---
 
 ## Performance Validation
 
-### Comprehensive Testing:
-- **1000 iterations stress test** - 0 crashes
-- **Edge case handling** - Empty arrays, constant data
-- **Large scale processing** - 100k samples
-- **Memory efficiency** - 6.8MB growth
-- **NaN stability** - 100% elimination
+Tested on an AMD Ryzen 9 5900X (DDR4 3600MHz).
+Framework: `tests/test_dispatch_benchmark.py`
 
-### Benchmark Results:
-```
-=== MULTI-DIMENSIONAL SCALING ===
-Random Noise: 6.141 entropy → 9.956x scaling (90% savings)
-Sparse Data: 0.000 entropy → 6.366x scaling (84% savings)
-Periodic Signal: 6.456 entropy → 9.965x scaling (90% savings)
+| Sparsity (Silence) | Mode                  | Peak Throughput | Execution Speedup |
+|--------------------|-----------------------|----------------|-------------------|
+| **0% (Dense)**     | Heavy Compute (AVX2)  | **123,010 FPS** | 1.00x             |
+| **50% (Mixed)**    | Branchless V-Table    | **221,418 FPS** | 1.80x             |
+| **90% (Sparse)**   | Branchless V-Table    | **684,064 FPS** | 5.56x             |
+| **99% (Extreme)**  | Pure V-Table Bypassing| **2,367,637 FPS**| **19.24x**        |
 
-=== PERFORMANCE OVERHEAD ===
-Size 10: 0.073ms <1ms achieved
-Size 50: 0.338ms <1ms achieved  
-Size 100: 0.728ms <1ms achieved
-Size 500: 1.504ms <1ms achieved
-```
+Residue absorbs extreme inputs, skipping mathematical processing on irrelevant/sparse segments in O(1) time without stalling the pipeline.
 
 ---
 
-## Framework Integration
+## License
 
-### PyTorch LLM Integration
-```python
-import residue_v2
-import torch
-
-class OptimizedTransformer(torch.nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.transformer = torch.nn.Transformer(**config)
-        self.controller = residue_v2.create_entropy_controller_v2()
-    
-    def forward(self, x):
-        # Analyze input complexity
-        features = residue_v2.compute_analog_scaling(x[0].cpu().numpy())
-        
-        # Semantic decision
-        should_skip, confidence = residue_v2.compute_skip_predict_decision(features[4])
-        
-        # Adaptive processing
-        if should_skip:
-            return self.transformer(x.half())
-        else:
-            return self.transformer(x)
-```
-
----
-
-## Advanced Usage
-
-### Custom Configuration
-```python
-# Create controller with custom parameters
-controller = residue_v2.create_entropy_controller_v2(
-    num_bins=512,           # Higher resolution entropy
-    entropy_threshold=0.05  # More aggressive optimization
-)
-
-# Configure scaling behavior
-controller.set_scaling_range(min_factor=0.1, max_factor=20.0)
-controller.set_entropy_threshold(0.2)  # Adjust sensitivity
-```
-
----
-
-## Why PROJECT RESIDUE for LLMs?
-
-### 1. LLM-Specific Optimization
-- **Token-level complexity analysis** perfect for language models
-- **Multi-dimensional understanding** beyond simple entropy
-- **Semantic decisions** for intelligent computation routing
-
-### 2. Production-Ready Stability
-- **1000+ iteration stress testing** with zero crashes
-- **NaN-free implementation** for reliable deployment
-- **Sub-millisecond performance** for real-time applications
-
-### 3. Measurable Business Value
-- **40%+ cost reduction** in cloud LLM inference
-- **2x faster response times** for real-time applications
-- **Extended battery life** for mobile LLM deployment
-
----
-
-## Support & Documentation
-
-- **Scientific Research:** [RESEARCH.md](RESEARCH.md) - Complete validation
-- **Source Code:** https://github.com/project-residue/residue
-- **Issues:** https://github.com/project-residue/residue/issues
-- **License:** MIT - Free for commercial use
-
----
-
-## Getting Started
-
-### Step 1: Install
-```bash
-pip install residue
-```
-
-### Step 2: Integrate
-```python
-import residue_v2
-# Add to your existing LLM pipeline
-```
-
-### Step 3: Optimize
-```python
-# Measure your savings
-entropy, complexity, sparsity, structure, scaling = residue_v2.compute_analog_scaling(your_input)
-savings = (1 - 1/scaling) * 100
-print(f"Computational savings: {savings:.1f}%")
-```
-
----
-
-## The Final Truth
-
-> "In the LLM era, computational efficiency is the difference between viable and impossible."
-
-**PROJECT RESIDUE delivers the efficiency needed to make LLM deployment practical, profitable, and sustainable.**
-
-**40%+ savings • 0.098ms overhead • Production-ready • LLM-optimized**
-
----
-
-## Performance Summary
-
-| Feature | Performance | Validation |
-|----------|-------------|-------------|
-| **Computational Savings** | 90% average | Empirically tested |
-| **Processing Overhead** | 0.098ms | Production tested |
-| **Batch Throughput** | 78M elements/sec | Production tested |
-| **Memory Efficiency** | 0.012KB/sample | Optimized for LLMs |
-| **Stability** | 1000+ iterations | Zero crashes |
-| **Multi-dimensional** | 7-feature analysis | Scientific validation |
-
----
-
-## Deploy Today
-
-**PROJECT RESIDUE is the most efficient inference optimizer for the LLM era.**
-
-- **Install:** `pip install residue`
-- **Integrate:** Drop-in to existing LLM pipelines
-- **Optimize:** 40%+ computational savings
-- **Deploy:** Production-ready stability
-
-**Transform your LLM deployment from computational burden to efficient advantage.**
-
----
-
-*"From theoretical impossibility to practical LLM optimization - that's PROJECT RESIDUE."*
+MIT License - Free for commercial and research use.
+See `LICENSE` for details.

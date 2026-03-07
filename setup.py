@@ -1,89 +1,41 @@
-#!/usr/bin/env python3
-"""
-PROJECT RESIDUE V2.0 - Optimized Build Script
-The Analog Scientist with NaN fixes and C++ optimizations
-"""
-
-import os
-import sys
 from setuptools import setup, Extension
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-from pybind11 import get_cmake_dir
 import pybind11
+import sys
+import os
 
-# Define the optimized extension module
+# V4.0 Standalone Zero Overhead Extension + Residue Wall + Isolation Zone
 ext_modules = [
     Pybind11Extension(
-        "residue_v2.residue_v2",
-        [
+        "residue.core",
+        sources=[
             "src/residue/core.cpp",
-            "src/residue/bindings.cpp"
+            "src/residue/bindings.cpp",
+            "src/residue_wall/residue_wall.cpp",
+            "src/residue_wall/async_observer.cpp"
         ],
         include_dirs=[
-            "src",
             pybind11.get_include(),
+            "src",
         ],
-        cxx_std=17,
-        define_macros=[("VERSION_INFO", '"2.0.0"')],
-        extra_compile_args=["/O2", "/bigobj"],  # MSVC optimized flags
+        cxx_std=20,
+        define_macros=[("VERSION_INFO", '"4.0.0"')],
+        extra_compile_args=["/O2", "/bigobj", "/std:c++20", "/arch:AVX2"] if "win" in sys.platform else ["-O3", "-std=c++20", "-mavx2", "-mfma", "-mpopcnt"],
+        extra_link_args=["winmm.lib"] if "win" in sys.platform else [],
     ),
 ]
 
-# Read the README for long description
-def read_readme():
-    with open("README.md", "r", encoding="utf-8") as fh:
-        return fh.read()
-
-# Setup configuration
 setup(
-    name="residue-v2",
-    version="2.0.0",
+    name="residue",
+    version="4.0.0",
     author="PROJECT RESIDUE",
-    author_email="residue@project-residue.org",
-    description="The Analog Scientist - Multi-dimensional ML optimization with semantic bridge",
-    long_description=read_readme(),
-    long_description_content_type="text/markdown",
-    url="https://github.com/project-residue/residue",
+    author_email="[EMAIL_ADDRESS]",
+    description="Bare-Metal AVX2 Inference Shield - V4.0",
+    long_description="PROJECT RESIDUE V4.0 - Bare-Metal Architecture with OS Bypass and Branchless Dispatch",
     ext_modules=ext_modules,
-    cmdclass={"build_ext": build_ext},
-    packages=["residue_v2"],
+    packages=["residue"],
     package_dir={"": "src"},
+    cmdclass={"build_ext": build_ext},
+    zip_safe=False,
     python_requires=">=3.8",
-    install_requires=[
-        "numpy>=1.19.0",
-        "pybind11>=2.10.0",
-    ],
-    extras_require={
-        "dev": [
-            "pytest>=6.0",
-            "pytest-cov>=2.0",
-        ],
-        "docs": [
-            "sphinx>=4.0",
-            "sphinx-rtd-theme>=1.0",
-        ],
-    },
-    classifiers=[
-        "Development Status :: 5 - Production/Stable",
-        "Intended Audience :: Developers",
-        "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
-        "Programming Language :: C++",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-    ],
-    keywords="machine learning optimization entropy analog scaling semantic bridge",
-    project_urls={
-        "Bug Reports": "https://github.com/project-residue/residue/issues",
-        "Source": "https://github.com/project-residue/residue",
-        "Documentation": "https://residue.readthedocs.io/",
-    },
 )

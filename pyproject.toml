@@ -11,8 +11,8 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "residue"
-version = "2.1.0"
-description = "The Most Efficient Inference Optimizer for LLM Era"
+version = "4.0.0"
+description = "Bare-Metal AVX2 Inference Shield for LLMs"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
