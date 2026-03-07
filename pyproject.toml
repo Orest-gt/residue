@@ -1,14 +1,13 @@
 [build-system]
 requires = [
     "setuptools>=61.0",
-    "wheel",
-    "pybind11>=2.6.0"
+    "pybind11>=2.13.6"
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "residue-protocol"
-version = "4.2.1"
+version = "4.2.2"
 description = "Bare-Metal AVX2 Inference Shield for LLMs"
 readme = "README.md"
 license = {text = "MIT"}
@@ -49,8 +48,7 @@ dev = [
     "flake8",
     "mypy"
 ]
-build = [
-    "pybind11>=2.6.0",
+    "pybind11>=2.13.6",
     "scikit-build-core>=0.4.0",
     "cmake>=3.15",
     "ninja; sys_platform != 'win32'"
@@ -72,7 +70,7 @@ packages = ["residue"]
 residue = ["*.pyd", "*.so", "*.dll"]
 
 [tool.cibuildwheel]
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp310-* cp311-* cp312-*"
 skip = "*-win32 *-manylinux_i686"
 
 [tool.black]
