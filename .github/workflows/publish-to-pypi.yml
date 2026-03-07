@@ -23,8 +23,8 @@ jobs:
       - name: Pre-warm cibuildwheel cache (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir -p C:\Users\runneradmin\AppData\Local\pypa\cibuildwheel\Cache
-          curl -L --retry 5 "https://github.com/pypa/get-virtualenv/raw/20.27.1/public/virtualenv.pyz" -o "C:\Users\runneradmin\AppData\Local\pypa\cibuildwheel\Cache\virtualenv-20.27.1.pyz"
+          mkdir -p "C:/Users/runneradmin/AppData/Local/pypa/cibuildwheel/Cache"
+          curl -L --retry 5 "https://github.com/pypa/get-virtualenv/raw/20.27.1/public/virtualenv.pyz" -o "C:/Users/runneradmin/AppData/Local/pypa/cibuildwheel/Cache/virtualenv-20.27.1.pyz"
         shell: bash
 
       - name: Pre-warm cibuildwheel cache (Linux)
