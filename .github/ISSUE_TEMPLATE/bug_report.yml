@@ -1,0 +1,50 @@
+name: Bug report
+about: Create a report to help us improve the Bare-Metal engine
+title: '[BUG] '
+labels: bug
+assignees: ''
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Prerequisites
+        * [ ] I am running the latest version of `residue-protocol` (check with `pip show residue-protocol`).
+        * [ ] I have read the [RESEARCH.md](https://github.com/Orest-gt/residue/blob/v4-baremetal/RESEARCH.md) regarding hardware limitations.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Hardware & OS Environment
+      description: |
+        Please run `from residue.core import print_isolation_report; print_isolation_report()` and paste the output here.
+      placeholder: |
+        CPU: AMD Ryzen 9 5900X
+        OS: Windows 11 / Linux Kernel 6.1
+        Residue Version: 4.2.4
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Messages
+      description: Please copy and paste any relevant logs or crash reports.
+    validations:
+      required: false
