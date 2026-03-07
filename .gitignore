@@ -58,3 +58,6 @@ quick_*.py
 manual_*.py
 final_*.py
 build_*.py
+
+# Agent workflows
+.agents/
