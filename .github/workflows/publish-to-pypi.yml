@@ -20,6 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Pre-warm cibuildwheel cache (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p C:\Users\runneradmin\AppData\Local\pypa\cibuildwheel\Cache
+          curl -L --retry 5 "https://github.com/pypa/get-virtualenv/raw/20.27.1/public/virtualenv.pyz" -o "C:\Users\runneradmin\AppData\Local\pypa\cibuildwheel\Cache\virtualenv-20.27.1.pyz"
+        shell: bash
+
+      - name: Pre-warm cibuildwheel cache (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/.cache/cibuildwheel
+          curl -L --retry 5 "https://github.com/pypa/get-virtualenv/raw/20.27.1/public/virtualenv.pyz" -o ~/.cache/cibuildwheel/virtualenv-20.27.1.pyz
+        shell: bash
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
         env:

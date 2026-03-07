@@ -5,5 +5,5 @@ V4.2.3 Reality-Synchronized Engine
 
 from .core import AsyncObserver, print_isolation_report
 
-__version__ = "4.2.3.post2"
+__version__ = "4.2.4"
 __all__ = ["AsyncObserver", "print_isolation_report"]

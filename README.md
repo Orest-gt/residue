@@ -1,11 +1,11 @@
 # PROJECT RESIDUE: Bare-Metal AVX2 Inference Shield for LLMs
 
-[![Version](https://img.shields.io/badge/version-4.2.3.post2-blue.svg)](https://github.com/project-residue/residue)
+[![Version](https://img.shields.io/badge/version-4.2.4-blue.svg)](https://github.com/project-residue/residue)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > **The ultimate real-time inference optimization tool, dropping LLM pre-filtering overhead to near-zero by completely bypassing the OS kernel and exploiting predicted AVX2 gating.**  
-> **STATUS:** V4.2.3.post2 PRODUCTION READY - BARE METAL ISOLATION - REALITY-SYNCHRONIZED
+> **STATUS:** V4.2.4 PRODUCTION READY - BARE METAL ISOLATION - REALITY-SYNCHRONIZED
 
 ---
 
@@ -14,7 +14,7 @@ When processing massive sensor streams or high-frequency sparse data before they
 
 **Project Residue solves this by operating as a "Shield" right before the neural network.** 
 
-By analyzing the structure, complexity, and sparsity of raw data via heuristics, Residue dictates if an input block is "dense enough" to wake up the GPU, or if it is "sparse/noise" and should just bypass execution entirely. To do this without becoming a bottleneck itself, Residue V4.2.3.post2 was forged directly in C++ AVX2 with techniques usually reserved for High-Frequency Trading.
+By analyzing the structure, complexity, and sparsity of raw data via heuristics, Residue dictates if an input block is "dense enough" to wake up the GPU, or if it is "sparse/noise" and should just bypass execution entirely. To do this without becoming a bottleneck itself, Residue V4.2.4 was forged directly in C++ AVX2 with techniques usually reserved for High-Frequency Trading.
 
 ---
 
@@ -52,7 +52,7 @@ Requires a C++17/C++20 compiler with AVX2 support (MSVC on Windows, GCC/Clang on
 git clone https://github.com/project-residue/residue.git
 cd residue
 
-# Build and Install the V4.2.3.post2 Engine
+# Build and Install the V4.2.4 Engine
 python setup.py build_ext --inplace
 python setup.py install
 # OR install directly from PyPI
