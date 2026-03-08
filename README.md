@@ -122,9 +122,34 @@ Framework: `tests/test_dispatch_benchmark.py`
 | **0% (Dense)**     | Baseline AVX2 Math    | **148,523 FPS** | 1.00x             |
 | **50% (Mixed)**    | Predicted Gating      | **437,130 FPS** | 2.94x             |
 | **90% (Sparse)**   | Predicted Gating      | **1,370,433 FPS** | 9.23x             |
-| **99% (Extreme)**  | Predicted Gating      | **2,178,336 FPS**| **14.67x**        |
-
 Residue absorbs extreme inputs, skipping mathematical processing on irrelevant/sparse segments in O(1) time without stalling the pipeline.
+
+---
+
+## PyTorch Integration (Selective Inference)
+
+Project Residue includes a `PyTorchShield` wrapper for high-performance selective inference. It allows you to wrap any `nn.Module` and automatically bypass processing if the input frame is identified as noise/silence.
+
+```python
+from residue.pytorch_bridge import PyTorchShield
+import torch
+
+# Your heavy model (Whisper, Audio-Transformer, etc.)
+model = MyHeavyModel()
+
+# Wrap with Residue Shield
+shielded_model = PyTorchShield(model, frame_size=1024)
+shielded_model.start()
+
+# Selective Inference Loop
+output = shielded_model(input_tensor) # Only runs model() if signal found
+
+# Metrics
+stats = shielded_model.get_stats()
+print(f"Bypassed: {stats.total_samples_skipped} frames")
+```
+
+See `examples/demo_audio_shield.py` for a full performance demonstration (3.4x+ PROJECTED speedup).
 
 ---
 
