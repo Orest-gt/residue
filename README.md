@@ -122,6 +122,13 @@ Framework: `tests/test_dispatch_benchmark.py`
 | **0% (Dense)**     | Baseline AVX2 Math    | **148,523 FPS** | 1.00x             |
 | **50% (Mixed)**    | Predicted Gating      | **437,130 FPS** | 2.94x             |
 | **90% (Sparse)**   | Predicted Gating      | **1,370,433 FPS** | 9.23x             |
+
+### Measured Performance Gains
+<p align="center">
+  <img src="performance_testing/results/charts/sparsity_throughput.png" width="45%" />
+  <img src="performance_testing/results/charts/speedup_scaling.png" width="45%" />
+</p>
+
 Residue absorbs extreme inputs, skipping mathematical processing on irrelevant/sparse segments in O(1) time without stalling the pipeline.
 
 ---
